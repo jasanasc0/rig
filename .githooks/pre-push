@@ -1,0 +1,13 @@
+#!/bin/sh
+# Refuse a push when any pushed commit's tree, file paths, message, author or committer holds a word from .content-gate.local.
+root=$(git rev-parse --show-toplevel) || exit 1
+while read -r lref lsha rref rsha; do
+  case "$lsha" in *[!0]*) ;; *) continue ;; esac # delete
+  case "$rsha" in *[!0]*) range="$rsha..$lsha" ;; *) range="$lsha" ;; esac
+  commits=$(git rev-list "$range") || exit 1
+  for c in $commits; do
+    # </dev/null: the loop's stdin holds the remaining ref lines
+    node "$root/content-gate.cjs" --tree "$c" --messages "$c^!" </dev/null || exit 1
+  done
+done
+exit 0

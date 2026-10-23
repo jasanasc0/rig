@@ -1,0 +1,18 @@
+# Only the engine is tracked: every top-level folder is ignored except these.
+/*/
+!/example/
+!/.githooks/
+!/test/
+
+# Working state
+*/work/now.md
+*/active-worktree
+*/core-scope.json
+*/work/briefs/
+*/work/pms/
+*/work/pms-undo/
+*/work/inbox/
+*/work/.obsidian/
+
+# The content gate's private word list
+/.content-gate.local

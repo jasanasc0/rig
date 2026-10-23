@@ -1,0 +1,25 @@
+{
+  "env": { "PONYTAIL_DEFAULT_MODE": "off", "MCP_TIMEOUT": "60000" },
+  "permissions": { "additionalDirectories": ["{{RIG}}/example/work/briefs"] },
+  "enabledPlugins": {
+    "superpowers@claude-plugins-official": false,
+    "figma@claude-plugins-official": false,
+    "frontend-design@claude-plugins-official": false,
+    "ponytail@ponytail": false,
+    "claude-md-management@claude-plugins-official": false,
+    "code-simplifier@claude-plugins-official": false,
+    "customerio@customerio": false,
+    "i-have-adhd@i-have-adhd": false,
+    "watch@claude-video": false
+  },
+  "hooks": {
+    "PreToolUse": [
+      { "matcher": "*", "hooks": [{ "type": "command", "command": "node {{RIG}}/guard.cjs --project example --seat checker || exit 2" }] }
+    ],
+    "SessionStart": [
+      { "matcher": "startup", "hooks": [{ "type": "command", "command": "node {{RIG}}/refocus.cjs --project example --seat angela" }, { "type": "command", "command": "node {{RIG}}/refocus.cjs --project example --seat angela --claude-md" }] },
+      { "matcher": "clear", "hooks": [{ "type": "command", "command": "node {{RIG}}/refocus.cjs --project example --seat angela" }, { "type": "command", "command": "node {{RIG}}/refocus.cjs --project example --seat angela --claude-md" }] },
+      { "matcher": "compact", "hooks": [{ "type": "command", "command": "node {{RIG}}/refocus.cjs --project example --seat angela" }, { "type": "command", "command": "node {{RIG}}/refocus.cjs --project example --seat angela --claude-md" }] }
+    ]
+  }
+}

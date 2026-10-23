@@ -1,0 +1,16 @@
+{
+  "name": "example",
+  "root": "C:/example-project",
+  "defaultBranch": "main",
+  "ticketPrefix": "ex",
+  "lanes": { "orchestrator": "ex-orchestrator", "coder": "ex-coder", "angela": "ex-angela", "oscar": "ex-oscar", "pam": "ex-pam" },
+  "knowledgeDirs": [".agent", "docs"],
+  "coreDirs": ["/src/core/"],
+  "coreFiles": ["/src/payments.ts"],
+  "moneyNames": ["billing.ts"],
+  "boardScript": null,
+  "worktreeCopy": [],
+  "nodeModulesJunction": false,
+  "projectSettings": false,
+  "pms": null
+}

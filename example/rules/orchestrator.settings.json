@@ -1,0 +1,20 @@
+{
+  "env": { "MCP_TIMEOUT": "60000" },
+  "enabledPlugins": {
+    "figma@claude-plugins-official": false,
+    "watch@claude-video": false
+  },
+  "hooks": {
+    "PreToolUse": [
+      { "matcher": "*", "hooks": [{ "type": "command", "command": "node {{RIG}}/guard.cjs --project example --seat orchestrator || exit 2" }] }
+    ],
+    "SessionStart": [
+      { "matcher": "startup", "hooks": [{ "type": "command", "command": "node {{RIG}}/refocus.cjs --project example --seat orchestrator" }, { "type": "command", "command": "node {{RIG}}/refocus.cjs --project example --seat orchestrator --claude-md" }] },
+      { "matcher": "clear", "hooks": [{ "type": "command", "command": "node {{RIG}}/refocus.cjs --project example --seat orchestrator" }, { "type": "command", "command": "node {{RIG}}/refocus.cjs --project example --seat orchestrator --claude-md" }] },
+      { "matcher": "compact", "hooks": [{ "type": "command", "command": "node {{RIG}}/refocus.cjs --project example --seat orchestrator" }, { "type": "command", "command": "node {{RIG}}/refocus.cjs --project example --seat orchestrator --claude-md" }] }
+    ],
+    "UserPromptSubmit": [
+      { "hooks": [{ "type": "command", "command": "node {{RIG}}/context-check.cjs --project example" }] }
+    ]
+  }
+}
