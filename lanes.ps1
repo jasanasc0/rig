@@ -35,7 +35,7 @@ try {
 
   # The flags each worker lane starts with (the rig README, The seats), the same in every project.
   $flags = @{
-    coder = '--model', 'opus', '--effort', 'high', '--permission-mode', 'auto', '--disallowedTools', 'Agent'
+    coder = '--model', 'opus', '--effort', 'max', '--permission-mode', 'auto', '--disallowedTools', 'Agent'
     angela = '--model', 'fable', '--effort', 'max', '--permission-mode', 'auto', '--disallowedTools', 'Edit', 'Write', 'NotebookEdit', 'Agent'
     oscar = '--model', 'sonnet', '--effort', 'medium', '--permission-mode', 'auto', '--disallowedTools', 'Edit', 'Write', 'NotebookEdit', 'Agent'
     pam = '--model', 'sonnet', '--effort', 'medium', '--permission-mode', 'auto', '--disallowedTools', 'Edit', 'Write', 'NotebookEdit', 'Agent' # oscar's (pam build)

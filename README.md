@@ -56,7 +56,7 @@ Every seat is plain Claude Code started with its own flags, a settings file and 
 | Seat | Model and effort | Does | Never does |
 |---|---|---|---|
 | orchestrator | opus, high | Talks ideas through with you, researches, writes briefs, runs the lanes, reports back, keeps the working notes. | Writes product code. Pushes, merges or deploys. Posts to the board (it may run the board script's reads and dry runs; only pam runs `--live`). |
-| coder | opus, high | Builds the change inside one ticket's worktree. For a bug: a failing test first, then the fix. Commits on the worktree branch. | Edits outside the active worktree. Installs packages. Runs herdr. Writes to the rig folder. |
+| coder | opus, max; ponytail at ultra | Builds the change inside one ticket's worktree. For a bug: a failing test first, then the fix. Commits on the worktree branch. | Edits outside the active worktree. Installs packages. Runs herdr. Writes to the rig folder. |
 | angela | fable, max | Reviews the change adversarially, with proof: a failing test, an input and its wrong output, or a caller chain as `file:line`. Grades each finding BLOCKING, RESPOND or ADVISORY and ends with a verdict. | Edits anything. |
 | oscar | sonnet, medium | The gate. Runs lint, tests, build and type-check in the worktree and reports PASS or FAIL per command against a known baseline. Checks the coder's red-to-green proof. | Edits anything. |
 | pam (tab 2) | sonnet, medium | Posts the board updates the orchestrator drafted, only after you say "post". Dry-runs first and flags anything that contradicts the draft. | Edits files. Posts without the line `Jas approved: post` in her brief. |

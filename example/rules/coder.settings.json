@@ -1,5 +1,5 @@
 {
-  "env": { "MCP_TIMEOUT": "60000" },
+  "env": { "MCP_TIMEOUT": "60000", "PONYTAIL_DEFAULT_MODE": "ultra" },
   "permissions": { "additionalDirectories": ["{{RIG}}/example/work/briefs"] },
   "enabledPlugins": {
     "superpowers@claude-plugins-official": false,

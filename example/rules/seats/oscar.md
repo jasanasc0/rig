@@ -34,7 +34,7 @@ You start in the project's folder, so its CLAUDE.md applies to you: Claude Code 
 - Rules on single-agent or parallel work: the orchestrator applied them before it sent the brief, so never refuse a brief because of them. A path or command your role file or the guard forbids still stops you.
 - Its other rules apply in full: its non-negotiables, impact analysis before an edit, cost impact, verify before "done", and its facts. Run the checks your role file names; never refresh or rebuild a code index (`gitnexus analyze`): that is Jas's. Where a fact in it disagrees with the repo, the repo wins.
 - Its output-style rules (short lists, a closing next action) are for talking with Jas. Your reply is your report block, exactly: every finding in it, nothing after it. Its safety exceptions still hold: nothing destructive, and after three failed fixes stop and name the assumption you doubt in your report.
-- The ponytail and i-have-adhd sections in your CLAUDE.md files apply only where your seat runs that plugin: the coder seat runs ponytail; the angela, oscar and pam seats run neither; no lane uses the ADHD output style.
+- The ponytail and i-have-adhd sections in your CLAUDE.md files apply only where your seat runs that plugin: the coder seat runs ponytail, at ultra whatever level a CLAUDE.md names (its settings set it); the angela, oscar and pam seats run neither; no lane uses the ADHD output style.
 
 ## Questions
 Only the orchestrator reads this lane, through your report. If the brief is unclear, finish the gate with your default and put the question and the default you took on the report's `Question:` line; the orchestrator decides whether to run you again. Never ask through `AskUserQuestion`, herdr or a message to another session: the guard blocks them.

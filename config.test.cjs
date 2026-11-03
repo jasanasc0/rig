@@ -19,12 +19,14 @@ const PLUGINS = [
   'watch@claude-video',
   'supermemory@supermemory-plugins', // lean build: off in the worker seats (its recall hook adds about 1.7 s to each prompt); the orchestrator keeps it (below)
 ];
+// ponytail: the seat's PONYTAIL_DEFAULT_MODE (ponytail reads it before its own config file): not set for the orchestrator (Jas's default),
+// ultra for the coder (Jas, 2026-11-03: the coder lane always runs ponytail ultra), off for the seats that don't run ponytail.
 const SEATS = {
-  orchestrator: { guard: 'orchestrator', off: ['figma@claude-plugins-official', 'watch@claude-video'], on: [], rotation: true, ponytailOff: false },
-  coder: { guard: 'coder', off: PLUGINS.filter((p) => p !== 'ponytail@ponytail'), on: ['ponytail@ponytail'], rotation: false, ponytailOff: false },
-  angela: { guard: 'checker', off: PLUGINS, on: [], rotation: false, ponytailOff: true },
-  oscar: { guard: 'checker', off: PLUGINS, on: [], rotation: false, ponytailOff: true },
-  pam: { guard: 'pam', off: PLUGINS, on: [], rotation: false, ponytailOff: true }, // pam build: oscar's settings with its own guard seat
+  orchestrator: { guard: 'orchestrator', off: ['figma@claude-plugins-official', 'watch@claude-video'], on: [], rotation: true, ponytail: undefined },
+  coder: { guard: 'coder', off: PLUGINS.filter((p) => p !== 'ponytail@ponytail'), on: ['ponytail@ponytail'], rotation: false, ponytail: 'ultra' },
+  angela: { guard: 'checker', off: PLUGINS, on: [], rotation: false, ponytail: 'off' },
+  oscar: { guard: 'checker', off: PLUGINS, on: [], rotation: false, ponytail: 'off' },
+  pam: { guard: 'pam', off: PLUGINS, on: [], rotation: false, ponytail: 'off' }, // pam build: oscar's settings with its own guard seat
 };
 
 let total = 0;
@@ -71,7 +73,7 @@ for (const project of PROJECTS)
     for (const p of want.off) check(`${tag}: ${p} off`, Boolean(s.enabledPlugins) && s.enabledPlugins[p] === false);
     for (const p of want.on) check(`${tag}: ${p} on`, Boolean(s.enabledPlugins) && s.enabledPlugins[p] === true);
     if (seat === 'orchestrator') check(`${tag}: supermemory not switched off (the memory lives in this lane)`, (s.enabledPlugins || {})['supermemory@supermemory-plugins'] !== false);
-    check(`${tag}: PONYTAIL_DEFAULT_MODE ${want.ponytailOff ? 'off' : 'not set'}`, ((s.env || {}).PONYTAIL_DEFAULT_MODE === 'off') === want.ponytailOff);
+    check(`${tag}: PONYTAIL_DEFAULT_MODE ${want.ponytail || 'not set'}`, (s.env || {}).PONYTAIL_DEFAULT_MODE === want.ponytail);
     // Field note 7a: GitNexus's MCP server needs more than the default 30 s to answer at start, in every lane.
     check(`${tag}: env MCP_TIMEOUT is "60000"`, (s.env || {}).MCP_TIMEOUT === '60000');
     // Field note 9: every lane reads its briefs (pam also its drafts) without asking; the guard still blocks every write there. The

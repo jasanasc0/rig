@@ -29,7 +29,7 @@ if (process.exitCode) process.stderr.write('stub guard: this is not the test PAT
 # `--`: -n <lane>, --setting-sources user,local where the profile's projectSettings is false (example; sample's is true), the flags, then
 # its own project's settings file, seat file and MCP config.
 $flags = [ordered]@{
-  coder = '--model opus --effort high --permission-mode auto --disallowedTools Agent'
+  coder = '--model opus --effort max --permission-mode auto --disallowedTools Agent'
   angela = '--model fable --effort max --permission-mode auto --disallowedTools Edit Write NotebookEdit Agent'
   oscar = '--model sonnet --effort medium --permission-mode auto --disallowedTools Edit Write NotebookEdit Agent'
   pam = '--model sonnet --effort medium --permission-mode auto --disallowedTools Edit Write NotebookEdit Agent'
