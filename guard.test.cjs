@@ -1609,6 +1609,11 @@ fast('linear: 20,000 & in a row for the orchestrator (holes build)', 'orchestrat
 // The & of a redirect starts no command (holes build, round 2): 8,000 `&>x` words took about 10 s for every seat before.
 fast('linear: 8,000 &>x redirects for the orchestrator', 'orchestrator', 'Bash', '&>x '.repeat(8000) + 'y');
 fast('linear: 8,000 &>x redirects for the coder', 'coder', 'Bash', '&>x '.repeat(8000) + 'y');
+// Round 2b (its final review): three of round 2's patterns scanned to the end of the command from every start.
+fast('linear: 40,000 ",." for the orchestrator', 'orchestrator', 'PowerShell', 'x ' + ',.'.repeat(40000));
+fast('linear: 15,000 "$env:PATH," for the orchestrator', 'orchestrator', 'PowerShell', '$env:PATH,'.repeat(15000));
+fast('linear: 20,000 win32_process words for the orchestrator', 'orchestrator', 'PowerShell', 'win32_process '.repeat(20000));
+fast('linear: 20,000 new-object words for the orchestrator', 'orchestrator', 'PowerShell', 'new-object '.repeat(20000));
 fast('linear: 12,000 claude commands in a row', 'coder', 'Bash', 'claude; '.repeat(12000));
 fast('linear: 16,000 herdr words in one segment', 'orchestrator', 'Bash', 'herdr '.repeat(16000));
 fast('linear: 7,000 Start-Process words then claude', 'checker', 'PowerShell', 'Start-Process '.repeat(7000) + 'claude');
@@ -2984,17 +2989,63 @@ for (const seat of ['orchestrator', 'pam', 'coder'])
   for (const c of ["[Management.Automation.ScriptBlock]::Create('x')", "[System.Management.Automation.ScriptBlock]::Create('x').Invoke()", "$ExecutionContext.InvokeCommand.ExpandString('$(Get-Date)')"])
     tr(`holes r2: ${seat}'s ${c.slice(0, 50)} blocked`, seat, 'PowerShell', sh(c), 'unreadable', ['wrapped or encoded commands']);
 // A file run by its path, whatever its extension, and the script hosts: only the listed scripts.
-for (const c of ["& 'C:\\tmp\\x'", "& 'C:\\tmp\\x.vbs'", 'C:\\tmp\\x.exe', '.\\x', 'cscript C:\\tmp\\x.js', 'wscript C:\\tmp\\x.vbs', 'mshta C:\\tmp\\x.hta'])
+for (const c of ["& 'C:\\tmp\\x'", "& 'C:\\tmp\\x.vbs'", 'C:\\tmp\\x.exe', '.\\x'])
   tr(`holes r2: the orchestrator's PowerShell ${c} blocked (not a listed script)`, 'orchestrator', 'PowerShell', sh(c), 'seat-limits', ['named scripts']);
 for (const c of ['./x', '/tmp/x', '~/x.bin'])
   tr(`holes r2: the orchestrator's Bash ${c} blocked (not a listed script)`, 'orchestrator', 'Bash', sh(c), 'seat-limits', ['named scripts']);
-for (const [tool, c] of [['PowerShell', "& 'C:\\tmp\\x'"], ['PowerShell', 'cscript C:\\tmp\\x.js'], ['Bash', './x']])
+for (const [tool, c] of [['PowerShell', "& 'C:\\tmp\\x'"], ['Bash', './x']])
   tr(`holes r2: pam's ${c} blocked (not pms.cjs)`, 'pam', tool, sh(c), 'seat-limits', ["pam runs only the rig's pms.cjs"]);
-// Launchers start a program the guard can't follow.
+// Launchers start a program the guard can't follow; the script hosts cscript, wscript and mshta are refused outright (round 2b).
 const LAUNCHER = ["a launcher starts a program the guard can't follow"];
 for (const seat of ['orchestrator', 'pam'])
-  for (const c of ['Start-Process $h', 'Start-Process notepad', 'start notepad', 'saps notepad', "ii 'C:\\tmp\\x.cmd'", 'Invoke-Item C:\\tmp\\x.txt', 'Start-Job -FilePath $f', 'Start-Job { Get-Date }', 'sajb { Get-Date }', "wt.exe 'C:\\tmp\\x.cmd'", 'conhost notepad', 'runas /user:x notepad'])
+  for (const c of ['Start-Process $h', 'Start-Process notepad', 'start notepad', 'saps notepad', "ii 'C:\\tmp\\x.cmd'", 'Invoke-Item C:\\tmp\\x.txt', 'Start-Job -FilePath $f', 'Start-Job { Get-Date }', 'sajb { Get-Date }', "wt.exe 'C:\\tmp\\x.cmd'", 'conhost notepad', 'runas /user:x notepad', 'cscript C:\\tmp\\x.js', 'wscript C:\\tmp\\x.vbs', 'mshta C:\\tmp\\x.hta', "sudo 'C:\\tmp\\x.exe'"])
     tr(`holes r2: ${seat}'s ${c} blocked`, seat, 'PowerShell', sh(c), 'unreadable', LAUNCHER);
+// ----- round 2b (the final review of round 2): close variants of its own forms, and older one-character holes -----
+const TMPX = 'C:\\tmp\\x';
+for (const [tool, c, rule, words] of [
+  ['Bash', 'e=erdr; "h$e" pane split --current', 'unreadable', HIDDEN],
+  ['Bash', "e=erdr; 'h'$e agent start ex-coder --kind claude --pane w1:p2", 'unreadable', HIDDEN],
+  ['Bash', 'h=herdr; if true; then case a in a) $h pane split --current;; esac; fi', 'unreadable', ["Bash's case"]],
+  ['Bash', 'h=herdr; { case a in a) $h tab create;; esac; }', 'unreadable', ["Bash's case"]],
+  ['PowerShell', `$f = '${TMPX}\\x.cjs'; node "$($f)"`, 'unreadable', HIDDEN],
+  ['Bash', `export NODE_OPTIONS+=--require=/c/tmp/x.cjs; node ${RIGF}/report.cjs --ticket EX-1`, 'seat-limits', RESOLVED],
+  ['PowerShell', "$p = [Diagnostics.Process]@{}; $p.StartInfo.FileName = 'herdr'; $p.StartInfo.Arguments = 'pane split --current'; $p.Start()", 'unreadable', LAUNCHED],
+  ['PowerShell', `Write-Output(${TMPX}\\x.vbs)`, 'seat-limits', ['named scripts']],
+  ['PowerShell', `if(${TMPX}\\x.vbs){}`, 'seat-limits', ['named scripts']],
+  ['Bash', 'if(/c/tmp/x);then :;fi', 'seat-limits', ['named scripts']],
+  ['PowerShell', `Set-Location '${TMPX}'; cscript x.vbs`, 'unreadable', LAUNCHER],
+  ['PowerShell', `Set-Location '${TMPX}'; wscript x.vbs`, 'unreadable', LAUNCHER],
+  ['PowerShell', `Set-Location '${TMPX}'; mshta x.hta`, 'unreadable', LAUNCHER],
+  ['PowerShell', 'mshta vbscript:Execute("x")', 'unreadable', LAUNCHER],
+  ['Bash', '/c/x/sample/.agent/herdr agent list', 'seat-limits', ['named scripts']],
+  ['Bash', "'source' x", 'unreadable', SOURCED],
+  ['PowerShell', 'node docs', 'seat-limits', ['named scripts']],
+  ['PowerShell', 'node --title x C:\\tmp\\x.cjs', 'seat-limits', ['named scripts']],
+  ['PowerShell', 'deno run C:\\tmp\\x.ts', 'seat-limits', ['named scripts']],
+])
+  tr(`holes r2b: the orchestrator's ${tool} ${c.slice(0, 50)} blocked`, 'orchestrator', tool, sh(c), rule, words);
+for (const [tool, c, rule, words] of [
+  ['Bash', 'node "$(printf /c/tmp/x.cjs)"', 'unreadable', HIDDEN],
+  ['Bash', `export NODE_OPTIONS+=--require=/c/tmp/x.cjs; node ${RIGF}/pms.cjs --project example board`, 'seat-limits', RESOLVED],
+  ['PowerShell', 'node docs', 'seat-limits', ["pam runs only the rig's pms.cjs"]],
+])
+  tr(`holes r2b: pam's ${tool} ${c.slice(0, 50)} blocked`, 'pam', tool, sh(c), rule, words);
+// cmd //c from Git Bash (it turns //c into /c) ran a Claude past every seat's guard.
+for (const seat of ['orchestrator', 'coder', 'checker', 'pam'])
+  tr(`holes r2b: ${seat}'s Bash cmd //c claude blocked`, seat, 'Bash', sh('cmd //c claude -p hi'), 'unreadable', ['wrapped or encoded commands']);
+// Round 2b's false blocks of round 2: reads through the env: drive, and a / that divides.
+for (const [tool, c] of [
+  ['PowerShell', 'Get-Item env:PATH'],
+  ['PowerShell', 'Test-Path env:NODE_OPTIONS'],
+  ['PowerShell', 'Get-ChildItem env:PATH'],
+  ['PowerShell', "Get-ChildItem | Select-Object Name, @{n='KB';e={$_.Length/1KB}}"],
+  ['PowerShell', '"{0:N1}" -f ($a/$b)'],
+  ['PowerShell', '[System.Diagnostics.Process]::GetProcesses() | Measure-Object'],
+  ['PowerShell', 'python -m json.tool x.json'],
+  ['PowerShell', "& 'C:\\Users\\dev\\AppData\\Local\\Programs\\Obsidian\\Obsidian.com' vault=docs unresolved"],
+  ['Bash', 'echo $((6/2))'],
+])
+  t(`holes r2b: the orchestrator's ${tool} ${c.slice(0, 60)} still allowed`, 'orchestrator', tool, sh(c), true);
 // Round 2's false blocks of round 1, and reads that stay allowed.
 for (const [tool, c] of [
   ['PowerShell', 'Get-ChildItem env:HERDR_*'],
