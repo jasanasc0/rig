@@ -120,7 +120,7 @@ Exit 2 blocks the call and sends the reason back to the model. The `|| exit 2` m
 - **Worktree safety:** recursive deletes of worktrees or `node_modules`, `git clean`, and anyone but the orchestrator creating or removing worktrees.
 - **The rules themselves:** edits anywhere in `<rig>\` (except the orchestrator's own working files), to any `.claude\settings*.json`, to Obsidian settings, and to the herdr skill folder.
 - **Agents the guard cannot see:** starting `claude` from a shell. A Claude started that way loads no rig settings and so has no guard. Lanes start only through `lanes.ps1`, which holds every lane's flags. The guard lets the orchestrator run it with its own project's name only, and never dot-sourced.
-- **Unreadable commands:** `Invoke-Expression`, encoded commands, `bash -c` style wrappers, inline interpreter code and a program piped into an interpreter.
+- **Unreadable commands:** `Invoke-Expression`, encoded commands, `bash -c` style wrappers, inline interpreter code and a program piped into an interpreter. For the orchestrator and pam, the two seats with a script list, also every call whose program or script is computed (`& $x`, `& (Get-Command herdr)`, `. $x`, and in Bash a command word `$x`, `"$x"`, `$(...)` or a backtick), Bash `.` and `source`, `Import-Module`, `Invoke-Command` and `Add-Type`, and a program started through .NET, WMI or COM. A dot-source with no blank after the dot (`.'<path>'`) counts as a dot-source. The orchestrator may read herdr's `HERDR_*` variables but not change them: `lanes.ps1` trusts them to know its pane, tab and space.
 
 ### Core scope
 
@@ -142,8 +142,7 @@ Read these before you trust the rig with anything you cannot undo.
 - **The orchestrator runs with permission prompts off.** `rig.ps1` starts it with Claude Code's `--dangerously-skip-permissions` flag, so for that session the guard is the only barrier: nothing asks you before a call the guard allows.
 - **It does not read code a lane runs.** A test, script, build step, git hook or package that the coder writes and then runs executes outside the guard, with your permissions. The coder's worktree code runs by design, so you review the diff before you merge.
 - **The coder's shell copy or move after a `cd` out of its worktree is not caught yet.** The guard checks a shell command against the rig folder only by the common spellings of its path. A copy or move that follows a `cd` out of the worktree, or that uses a name built from `$env:HOMEDRIVE$env:HOMEPATH`, can reach rig files and a project's `core-scope.json`. The coder's role text forbids it, and a later change is meant to close it. The same gap lets a shell reach another project's checkout.
-- **A text filter has a ceiling.** A command name built at run time (`$(echo claude)`), a name with a stray backslash, and a few other tricks are not read. The role texts tell each lane not to work around a block.
-- **The orchestrator's script list and herdr rules are not closed yet.** They read a command as it is written. A call through a variable or an expression (`& $x`, `& (Get-Command herdr)`, Bash `$x ...`), a dot-source with no blank after the dot (`.'<rig>\lanes.ps1'`), `Import-Module`, `Invoke-Command -FilePath`, Bash `source`, and a changed `$env:HERDR_PANE_ID`, `HERDR_TAB_ID` or `HERDR_WORKSPACE_ID` (which `lanes.ps1` trusts) get past them, so the orchestrator could start a lane, split a pane or run a script itself. Workers are not affected: they cannot name herdr in any form. The role text forbids it, and a later change is meant to close these.
+- **A text filter has a ceiling.** A command name built at run time (`$(echo claude)`, `& $c`), a name with a stray backslash, and a few other tricks are not read in the coder's, angela's and oscar's shells; the orchestrator and pam refuse every computed call (see [What it blocks](#what-it-blocks)). A name assembled from pieces inside a string the guard can't read, such as `'her' + 'dr'` handed to a .NET call, is past any text filter. The role texts tell each lane not to work around a block.
 - **It can block harmless text.** A commit message that holds the word `powershell`, or a command that holds `herdr` or `claude` next to some punctuation, can be stopped. Each block says which rule fired.
 - **Approvals are a role rule.** The guard cannot tell whether you really said "post". pam posts only when her brief holds the line `Jas approved: post`, and only the orchestrator writes that line, only after you say it.
 
@@ -429,7 +428,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File new-project.selftest.ps1
 
 | Suite | Covers | Count at the last run |
 |---|---|---|
-| `guard.test.cjs` | The guard's decisions: at least one blocked and one allowed case per rule, run on `example` and a second fixture. | 2916 checks |
+| `guard.test.cjs` | The guard's decisions: at least one blocked and one allowed case per rule, run on `example` and a second fixture. | 3085 checks |
 | `helpers.test.cjs` | `report.cjs`, `refocus.cjs`, `context-check.cjs`. | 79 checks |
 | `pms.test.cjs` | The board client's dry runs, refusals and filters, against a fake board on localhost. | 305 checks |
 | `config.test.cjs` | The profile validator, the `.gitignore` globs, `rig.ps1`, `lanes.ps1` and the worktree scripts, and `example`'s settings. | 175 checks |

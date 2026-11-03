@@ -1600,6 +1600,10 @@ fast('linear: 1,000 time prefixes then herdr', 'orchestrator', 'Bash', 'time '.r
 fast('linear: 20,000 time prefixes then herdr', 'orchestrator', 'Bash', 'time '.repeat(20000) + 'herdr agent list');
 fast('linear: 1,000 env prefixes then claude', 'coder', 'Bash', 'env FOO=1 '.repeat(1000) + 'claude -p hi');
 fast('linear: 5,000 herdr commands in a row', 'orchestrator', 'Bash', 'herdr agent list; '.repeat(5000));
+// The holes build: its Bash patterns (bashWord, bashSource) read prefix words as CMD_POS does, for the orchestrator and pam only.
+fast('linear: 20,000 x=1 prefixes for the orchestrator (holes build)', 'orchestrator', 'Bash', 'x=1 '.repeat(20000) + 'echo hi');
+fast('linear: 20,000 ". " prefixes for pam (holes build)', 'pam', 'Bash', '. '.repeat(20000) + 'x');
+fast('linear: 20,000 & in a row for the orchestrator (holes build)', 'orchestrator', 'PowerShell', '& '.repeat(20000) + 'x');
 fast('linear: 12,000 claude commands in a row', 'coder', 'Bash', 'claude; '.repeat(12000));
 fast('linear: 16,000 herdr words in one segment', 'orchestrator', 'Bash', 'herdr '.repeat(16000));
 fast('linear: 7,000 Start-Process words then claude', 'checker', 'PowerShell', 'Start-Process '.repeat(7000) + 'claude');
@@ -2869,6 +2873,99 @@ for (const seat of ['coder', 'checker', 'pam']) {
 // The worker rule names close.ps1 and lanes.ps1 as whole file names only: auto-close.ps1 or a lanes.ps1.bak are other files.
 for (const c of ['npx vitest run src/auto-close.ps1.test.ts', 'git log --oneline -- tools/close.ps1.bak', 'git log --oneline -- tools/lanes.ps1.bak'])
   t(`close: a worker naming another file (${c}) is not the close.ps1 and lanes.ps1 rule`, 'checker', 'Bash', sh(c), true);
+// ===================== the holes build (2026-11-03): what the orchestrator's and pam's shell can't hide =====================
+// The engine port's review found each of these allowed: a call through a variable or an expression, a dot-source with no blank after the
+// dot, a file or code loaded into the shell, a program started through .NET, WMI or COM, and herdr's pane variables changed before
+// lanes.ps1, which trusts them. The orchestrator and pam are the seats with a script list; the workers can't name herdr at all.
+const RL = `${RIG}\\lanes.ps1`;
+const RC = `${RIG}\\close.ps1`;
+const HIDDEN = ['from a variable or an expression'];
+// & and . with a computed target (PowerShell). With herdr or a lane script in it, the orchestrator only: pam's shell may not name either.
+for (const c of [
+  '& (Get-Command herdr) agent start ex-coder --kind claude --pane w1:p2',
+  '& (gcm herdr) pane split --current',
+  '& (gcm herdr) tab create --cwd C:/x',
+  '& (gcm herdr) agent send-keys ex-coder y',
+  "$h = 'herdr'; & $h pane split --current",
+  "$h = 'her' + 'dr'; & $h tab create",
+  `$t = '${RL}'; & $t sample`,
+  `$t = '${RC}'; & $t sample -Force`,
+  `& (Join-Path '${RIG}' 'lanes.ps1') sample`,
+])
+  tr(`holes: the orchestrator's PowerShell ${c.slice(0, 60)} blocked`, 'orchestrator', 'PowerShell', sh(c), 'unreadable', HIDDEN);
+for (const seat of ['orchestrator', 'pam'])
+  for (const c of ['& $t', '&$t', '& ${t}', '& $env:T', '& "$t"', '& "$x\\run"', '& @(Get-Command node)[0] C:\\tmp\\x.cjs', "$t = 'C:\\tmp\\x.ps1'; & $t", '$r = & $t', 'if ($x) { & $t }', 'Get-Date | % { & $_ }', '. $t', '.$t', '. (Get-Command x)', '. "$t"', '$r = . $t'])
+    tr(`holes: ${seat}'s PowerShell ${c} blocked`, seat, 'PowerShell', sh(c), 'unreadable', HIDDEN);
+// Bash: a command word that is a variable, a substitution or a quoted variable runs whatever it expands to.
+for (const c of ['$h pane split --current', 'h=herdr; $h pane split --current', '"$h" tab create --cwd x', '${h} pane split', '$(echo herdr) pane split --current', '`echo herdr` pane split --current', 'x=1 $h agent list', 'true && $h agent list', 'true || $h agent list', 'true | $h agent list', 'for c in herdr; do $c pane split; done', 'exec $h agent list', 'sleep 1 & $h agent list', 'echo x; $(printf herdr) tab create'])
+  tr(`holes: the orchestrator's Bash ${c} blocked`, 'orchestrator', 'Bash', sh(c), 'unreadable', HIDDEN);
+for (const c of ['$x --project example board', '"$x" board', '$(echo node) C:/tmp/x.cjs', '`echo node` C:/tmp/x.cjs', 'x=1 $y'])
+  tr(`holes: pam's Bash ${c} blocked`, 'pam', 'Bash', sh(c), 'unreadable', HIDDEN);
+// A dot-source with no blank after the dot ('.' right before the quote) is a dot-source too: close.ps1 and lanes.ps1 get the dot-source
+// reason, any other script the script list's.
+for (const c of [`.'${RL}' example`, `."${RL}" example`, `.'${RL}' sample`, `.'${RC}' example`, `."${RC}" sample -Force`, `.'${RL}' example | % { Invoke-Herdr agent start ex-coder --kind claude --pane w1:p2 }`, `if ($true) { .'${RL}' example }`, `git status; ."${RL}" example`])
+  tr(`holes: a dot-source with no blank after the dot blocked: ${c.slice(0, 50)}`, 'orchestrator', 'PowerShell', sh(c), 'seat-limits', ['never dot-sourced']);
+tr("holes: the orchestrator's no-blank dot-source of a script it may not run blocked", 'orchestrator', 'PowerShell', sh(".'C:\\tmp\\x.ps1'"), 'seat-limits', ['named scripts']);
+tr("holes: pam's no-blank dot-source of a script blocked", 'pam', 'PowerShell', sh(".'C:\\tmp\\x.ps1'"), 'seat-limits', ["pam runs only the rig's pms.cjs"]);
+t("holes: the orchestrator's .'herdr' pane split blocked (the herdr rule reads it now)", 'orchestrator', 'PowerShell', sh(".'herdr' pane split --current"), false);
+tr("holes: a no-blank dot-source of wt-new.ps1 with another project's ticket blocked", 'orchestrator', 'PowerShell', sh(`.'${RIG}\\wt-new.ps1' sm12-x`), 'seat-limits', ['wt-new.ps1 and wt-remove.ps1 take exactly']);
+// Import-Module, Invoke-Command and Add-Type load a script, a module or code into the shell.
+const LOADED = ['load a script, a module or code into the shell'];
+for (const c of [`Import-Module '${RL}' -ArgumentList sample`, `icm -FilePath '${RL}' -ArgumentList sample`])
+  tr(`holes: the orchestrator's ${c.slice(0, 40)} blocked`, 'orchestrator', 'PowerShell', sh(c), 'unreadable', LOADED);
+for (const seat of ['orchestrator', 'pam'])
+  for (const c of ['Import-Module C:\\tmp\\x.ps1', 'ipmo C:\\tmp\\x.psm1', 'Import-Module PSReadLine', 'Invoke-Command -FilePath C:\\tmp\\x.ps1', 'icm -FilePath C:\\tmp\\x.ps1', 'Invoke-Command -ScriptBlock { Get-Date }', 'Add-Type -Path C:\\tmp\\a.cs', "Add-Type -TypeDefinition 'public class A {}'", 'Get-Date; Import-Module x'])
+    tr(`holes: ${seat}'s ${c} blocked`, seat, 'PowerShell', sh(c), 'unreadable', LOADED);
+for (const seat of ['orchestrator', 'pam'])
+  tr(`holes: ${seat}'s module-qualified Microsoft.PowerShell.Core\\Import-Module blocked (by the nested-powershell rule, first)`, seat, 'PowerShell', sh('Microsoft.PowerShell.Core\\Import-Module C:\\tmp\\x.ps1'), 'unreadable', ['nested powershell']);
+// Bash . and source run a file in the shell itself, whatever its name.
+const SOURCED = ['Bash . and source run a file in the shell itself'];
+tr("holes: the orchestrator's Bash source of lanes.ps1 blocked", 'orchestrator', 'Bash', sh(`source '${RIGF}/lanes.ps1' example`), 'unreadable', SOURCED);
+for (const seat of ['orchestrator', 'pam'])
+  for (const c of ['source C:/tmp/x', 'source C:/tmp/x.sh', '. C:/tmp/x', '. ./x', 'source ~/.bashrc', 'true && . C:/tmp/x', 'if true; then source x; fi', '. "$f"', 'source $f'])
+    tr(`holes: ${seat}'s Bash ${c} blocked`, seat, 'Bash', sh(c), 'unreadable', SOURCED);
+// A program started through .NET, WMI or COM.
+const LAUNCHED = ['through .NET, WMI or COM'];
+tr("holes: the orchestrator's System.Diagnostics.Process start of herdr blocked", 'orchestrator', 'PowerShell', sh("$p = New-Object System.Diagnostics.Process; $p.StartInfo.FileName = 'herdr.exe'; $p.StartInfo.Arguments = 'pane split --current'; $p.Start()"), 'unreadable', LAUNCHED);
+for (const seat of ['orchestrator', 'pam'])
+  for (const c of ["$p = [System.Diagnostics.Process]::new(); $p.StartInfo.FileName = 'node'; $p.Start()", "Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'node C:\\tmp\\x.cjs'", "Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = 'node C:\\tmp\\x.cjs' }", "(New-Object -ComObject Shell.Application).ShellExecute('node', 'C:\\tmp\\x.cjs')", "(New-Object -ComObject WScript.Shell).Exec('node C:\\tmp\\x.cjs')", "([wmiclass]'Win32_Process').Create('node C:\\tmp\\x.cjs')"])
+    t(`holes: ${seat}'s ${c.slice(0, 50)} blocked`, seat, 'PowerShell', sh(c), false);
+// herdr's caller context: lanes.ps1 trusts HERDR_PANE_ID, HERDR_TAB_ID and HERDR_WORKSPACE_ID, so the orchestrator reads them, never changes them.
+const HERDR_VARS = ['may read them but never'];
+for (const c of [`$env:HERDR_PANE_ID = 'w2:p1'; & '${RL}' example`, "$env:HERDR_TAB_ID='w2:t1'", '${env:HERDR_WORKSPACE_ID} = "w2"', "$env:HERDR_PANE_ID += 'x'", '$env:HERDR_ENV = $null', 'Set-Item env:HERDR_PANE_ID w2:p1', 'Set-Item -Path "Env:\\HERDR_WORKSPACE_ID" -Value w2', 'Remove-Item Env:\\HERDR_ENV', 'Rename-Item env:FOO -NewName HERDR_PANE_ID', "[Environment]::SetEnvironmentVariable('HERDR_PANE_ID', 'w2:p1')", '[System.Environment]::SetEnvironmentVariable("HERDR_TAB_ID", "w2:t1", "Process")'])
+  tr(`holes: the orchestrator's PowerShell ${c.slice(0, 50)} blocked`, 'orchestrator', 'PowerShell', sh(c), 'seat-limits', HERDR_VARS);
+for (const c of ['export HERDR_PANE_ID=w2:p1', 'HERDR_TAB_ID=w2:t1 herdr agent list', 'declare -x HERDR_WORKSPACE_ID=w2'])
+  tr(`holes: the orchestrator's Bash ${c} blocked`, 'orchestrator', 'Bash', sh(c), 'seat-limits', HERDR_VARS);
+pgr('holes: the sample orchestrator setting HERDR_WORKSPACE_ID blocked', 'orchestrator', 'PowerShell', sh(`$env:HERDR_WORKSPACE_ID = 'w1'; ${SLANES}sample`), 'seat-limits', HERDR_VARS);
+// What stays allowed: the role's own forms, reads of herdr's variables, $ and & and . where they are not a computed call.
+for (const [tool, c] of [
+  ['PowerShell', `& '${RL}' example`],
+  ['PowerShell', `& "${RL}" example`],
+  ['PowerShell', `${RL} example`],
+  ['PowerShell', '& { herdr agent list }'],
+  ['PowerShell', '$r = herdr agent list | ConvertFrom-Json'],
+  ['PowerShell', '$x = 1; $x.ToString()'],
+  ['PowerShell', '$env:HERDR_ENV'],
+  ['PowerShell', 'Write-Host $env:HERDR_PANE_ID $env:HERDR_TAB_ID $env:HERDR_WORKSPACE_ID'],
+  ['PowerShell', "if ($env:HERDR_ENV -eq '1') { 'in herdr' }"],
+  ['PowerShell', '$env:FOO = "bar"'],
+  ['PowerShell', 'Get-ChildItem env:'],
+  ['PowerShell', 'Write-Output "a & $b"'],
+  ['PowerShell', "Write-Output 'x . $y'"],
+  ['PowerShell', 'git status 2>&1'],
+  ['PowerShell', `.'${RIG}\\wt-new.ps1' ex12-x`],
+  ['PowerShell', `herdr agent prompt ex-coder "Read ${RIG}\\example\\work\\briefs\\ex12-coder.md and do it." --wait --timeout 3600000`],
+  ['Bash', 'x=1; echo $x'],
+  ['Bash', 'echo "$h"'],
+  ['Bash', 'echo $(date) $x'],
+  ['Bash', 'f=$(git rev-parse HEAD); echo $f'],
+  ['Bash', '[ -n "$x" ] && echo y'],
+  ['Bash', 'test -z "$HERDR_ENV" || echo in herdr'],
+  ['Bash', 'echo $HERDR_PANE_ID'],
+  ['Bash', 'git log -1 --format=%H 2>&1'],
+  ['Bash', 'herdr agent list'],
+])
+  t(`holes: the orchestrator's ${tool} ${c.slice(0, 60)} still allowed`, 'orchestrator', tool, sh(c), true);
 
 // ===================== the callpath build: EX-21, an alert-only call-path ticket =====================
 // No guard change: src/lib/alerts/ was never core, so the coder edits it in its active worktree, and the core, money, secrets, push and
