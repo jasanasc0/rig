@@ -27,7 +27,7 @@ In this file `<rig>` is the folder you cloned this repo into, and `~` is your ho
 
 - **herdr** is a terminal multiplexer for coding agents. It gives you panes, tabs and spaces (workspaces).
 - Each **lane** is one Claude Code session in one pane. It starts with its own settings file, its own role text and its own guard hook.
-- The **orchestrator** is the only seat you talk to. It starts and prompts the lanes. Lanes never talk to each other: everything goes through the orchestrator.
+- The **orchestrator** is the only seat you talk to. It starts the lanes (with `lanes.ps1`) and prompts them. Lanes never talk to each other: everything goes through the orchestrator.
 - The **guard** is a hook that runs before every tool call. It blocks pushes, deploys, secret reads, edits outside the allowed folders and more. See [Safety rules](#4-safety-rules).
 - Each project gets its own herdr space and its own lane names, so two projects can run side by side.
 
@@ -45,7 +45,7 @@ herdr space "example"
  +-----------------+--------+--------+   +-----------------+
 ```
 
-The orchestrator splits its own pane to the right for the coder, splits the coder's pane down for angela, splits angela's pane to the right for oscar, and opens tab 2 for pam.
+`rig.ps1` names the space after the project and opens tab 2, `seats`, before the orchestrator starts. The orchestrator then runs `lanes.ps1`, which splits the orchestrator's pane to the right for the coder, splits the coder's pane down for angela, splits angela's pane to the right for oscar, and starts pam in the one pane of the `seats` tab. A lane that already runs is left alone.
 
 Lane names are the project's ticket prefix plus the seat name: `ex-orchestrator`, `ex-coder`, `ex-angela`, `ex-oscar`, `ex-pam`.
 
@@ -116,10 +116,10 @@ Exit 2 blocks the call and sends the reason back to the model. The `|| exit 2` m
   - the coder edits only inside the active ticket's worktree, cannot use `git add -A`, cannot install packages, cannot write files from the shell and cannot name the rig folder;
   - angela, oscar and pam cannot write at all;
   - workers cannot run herdr or start a background command;
-  - the orchestrator edits only its own project's knowledge folders and `work\` folder, runs only a fixed list of rig scripts, stays in the main checkout, and runs herdr only for its own lanes.
+  - the orchestrator edits only its own project's knowledge folders and `work\` folder, runs only a fixed list of rig scripts, stays in the main checkout, and runs herdr only for its own lanes. It cannot start a lane, split a pane or open a tab itself: `lanes.ps1` and `rig.ps1` do that.
 - **Worktree safety:** recursive deletes of worktrees or `node_modules`, `git clean`, and anyone but the orchestrator creating or removing worktrees.
 - **The rules themselves:** edits anywhere in `<rig>\` (except the orchestrator's own working files), to any `.claude\settings*.json`, to Obsidian settings, and to the herdr skill folder.
-- **Agents the guard cannot see:** starting `claude` from a shell. A Claude started that way loads no rig settings and so has no guard. Lanes start only through the orchestrator's `herdr agent start`, and only with the exact command its role file lists.
+- **Agents the guard cannot see:** starting `claude` from a shell. A Claude started that way loads no rig settings and so has no guard. Lanes start only through `lanes.ps1`, which holds every lane's flags. The guard lets the orchestrator run it with its own project's name only, and never dot-sourced.
 - **Unreadable commands:** `Invoke-Expression`, encoded commands, `bash -c` style wrappers, inline interpreter code and a program piped into an interpreter.
 
 ### Core scope
@@ -143,6 +143,7 @@ Read these before you trust the rig with anything you cannot undo.
 - **It does not read code a lane runs.** A test, script, build step, git hook or package that the coder writes and then runs executes outside the guard, with your permissions. The coder's worktree code runs by design, so you review the diff before you merge.
 - **The coder's shell copy or move after a `cd` out of its worktree is not caught yet.** The guard checks a shell command against the rig folder only by the common spellings of its path. A copy or move that follows a `cd` out of the worktree, or that uses a name built from `$env:HOMEDRIVE$env:HOMEPATH`, can reach rig files and a project's `core-scope.json`. The coder's role text forbids it, and a later change is meant to close it. The same gap lets a shell reach another project's checkout.
 - **A text filter has a ceiling.** A command name built at run time (`$(echo claude)`), a name with a stray backslash, and a few other tricks are not read. The role texts tell each lane not to work around a block.
+- **The orchestrator's script list and herdr rules are not closed yet.** They read a command as it is written. A call through a variable or an expression (`& $x`, `& (Get-Command herdr)`, Bash `$x ...`), a dot-source with no blank after the dot (`.'<rig>\lanes.ps1'`), `Import-Module`, `Invoke-Command -FilePath`, Bash `source`, and a changed `$env:HERDR_PANE_ID`, `HERDR_TAB_ID` or `HERDR_WORKSPACE_ID` (which `lanes.ps1` trusts) get past them, so the orchestrator could start a lane, split a pane or run a script itself. Workers are not affected: they cannot name herdr in any form. The role text forbids it, and a later change is meant to close these.
 - **It can block harmless text.** A commit message that holds the word `powershell`, or a command that holds `herdr` or `claude` next to some punctuation, can be stopped. Each block says which rule fired.
 - **Approvals are a role rule.** The guard cannot tell whether you really said "post". pam posts only when her brief holds the line `Jas approved: post`, and only the orchestrator writes that line, only after you say it.
 
@@ -169,7 +170,7 @@ Findings from `--help` (no rig command lost an option; 12 of 13 commands unchang
 
 - Every option the guard allows still exists in 0.9.5. 0.9.5 added optional options the guard does not allow, and the guard refuses them: `--timeout` on `agent start`, `--workspace` on `pane list` and `tab list`, `--ansi` and `--raw` on reads. That is fine unless you need one.
 - `agent prompt` changed in behaviour. A `blocked` agent is rejected with `agent_blocked` before any input is sent. With `--wait`, the call needs a working or blocked state within 5000 ms of the submission, otherwise it returns `agent_prompt_stalled`. `--wait` does not track turns: an already-working agent's current turn can satisfy it.
-- `agent start` now succeeds only when the agent is detected ready in the pane, within a default of 30 s. The guard accepts only the exact lane start line, so it does not allow `--timeout` to extend that.
+- `agent start` now succeeds only when the agent is detected ready in the pane, within a default of 30 s. `lanes.ps1` does not pass `--timeout`, so it does not extend that.
 - `pane current` has `--current` and `--pane <ID>`, but the help does not say what `--current` means.
 
 Commands to run:
@@ -177,6 +178,7 @@ Commands to run:
 ```powershell
 herdr --version
 herdr pane current --current
+$env:HERDR_PANE_ID; $env:HERDR_TAB_ID; $env:HERDR_WORKSPACE_ID
 herdr agent list
 herdr agent get <lane>
 herdr tab list
@@ -185,17 +187,18 @@ herdr pane list
 
 Check that:
 
-1. `herdr pane current --current`, run in a lane's pane, returns that lane's own pane, not the focused one. `close.ps1` depends on it.
-2. The JSON that `close.ps1` reads is unchanged under the `result` wrapper. `close.ps1` is the only script that reads herdr JSON. `report.cjs` and `statusline.ps1` read none (`report.cjs` takes the plain text of `agent read` on stdin). The fields:
+1. `herdr pane current --current`, run in a lane's pane, returns that lane's own pane, not the focused one. `rig.ps1` and `close.ps1` depend on it. The three variables name the pane they are read in, its tab and its space (herdr sets them in every pane it manages). `lanes.ps1` depends on them.
+2. The JSON that `rig.ps1`, `lanes.ps1` and `close.ps1` read is unchanged under the `result` wrapper. They are the only scripts that read herdr JSON. `report.cjs` and `statusline.ps1` read none (`report.cjs` takes the plain text of `agent read` on stdin). The fields:
    - `pane current --current`: `result.pane.pane_id`, `result.pane.workspace_id`, `result.pane.tab_id`.
    - `agent get <lane>`: `result.agent.pane_id`, `result.agent.workspace_id`, `result.agent.agent_status`. `close.ps1` compares the status with `working`, `blocked` and `unknown`.
    - `pane list`: `result.panes[]` with `pane_id`, `tab_id` and `agent`. `agent` must be empty or absent once the lane has exited.
    - `tab list`: `result.tabs[]` with `tab_id`, `workspace_id` and `label` (compared with `seats`).
+   - `pane split` (`lanes.ps1`): `result.pane.pane_id`. `tab create` (`rig.ps1`): `result.tab.tab_id`.
    - Every call above exits 0 on success and non-zero on failure.
 3. `herdr agent get <lane>` for a lane that is not running still fails with text that contains `agent_not_found`.
 4. `agent prompt <lane> '/exit'` on a `blocked` lane now fails with `agent_blocked`. `close.ps1 -Force` should print "did not take /exit" and close the pane anyway.
 5. `agent prompt <lane> "..." --wait --timeout 3600000` on a lane that starts working does not return `agent_prompt_stalled` for a normal brief, and `agent wait <lane> --until idle --until done` still returns when the lane finishes.
-6. `herdr agent start` with the full lane line (`--kind claude --pane <pane> -- -n <lane> ...`) succeeds inside the 30 s readiness window. If a slow machine times out, the exact-line check blocks `--timeout`, so the line and the guard need a decision.
+6. `lanes.ps1` starts each lane inside the 30 s readiness window. It asks again for up to 15 s while herdr answers `agent_pane_unavailable` (a new pane whose shell is not at its prompt yet). If a slow machine still times out, `lanes.ps1`'s start line needs `--timeout`.
 7. `--env`, `--remote` and `--session` are still real herdr options in 0.9.5. Only the guard's allow lists keep them out.
 
 ## 6. Setup on a new machine
@@ -361,7 +364,7 @@ herdr workspace create --cwd C:\code\myapp --label myapp
 
 (Or make the space from herdr's own UI. The orchestrator is not allowed to create spaces.)
 
-Windows client PowerShell refuses local scripts by default, and `rig.ps1`, `wt-new.ps1`, `wt-remove.ps1` and `close.ps1` all run without `-ExecutionPolicy Bypass`. Allow them once:
+Windows client PowerShell refuses local scripts by default, and `rig.ps1`, `lanes.ps1`, `wt-new.ps1`, `wt-remove.ps1` and `close.ps1` all run without `-ExecutionPolicy Bypass`. Allow them once:
 
 ```powershell
 Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
@@ -379,11 +382,11 @@ Then, in that space's first pane, run `rig.ps1` by its full path. The pane start
 & 'C:\rig\rig.ps1' myapp
 ```
 
-`rig.ps1` takes the project name as its one parameter. It asks the guard to accept the profile, moves to the project's root and starts the orchestrator. It warns if you are not inside a herdr pane. The orchestrator then starts the four lanes and the `seats` tab.
+`rig.ps1` takes the project name as its one parameter. It asks the guard to accept the profile, names the herdr space after the project, opens the space's `seats` tab if it has none, moves to the project's root and starts the orchestrator. A herdr step that fails only warns, and it warns if you are not inside a herdr pane. The orchestrator then runs `lanes.ps1`, which starts the four lanes.
 
 ## 8. Daily use
 
-1. **Start.** In the project's herdr space, run `& '<rig>\rig.ps1' <name>` (by its full path: the pane starts in the project's root, not in `<rig>`). The orchestrator reads what Refocus printed, checks that it is inside herdr, starts any missing lane and tells you in three lines: the mission, the current ticket and what it proposes next. It also repeats every `[rig] WARNING` line first and names any `FILL IN:` paragraph still unwritten.
+1. **Start.** In the project's herdr space, run `& '<rig>\rig.ps1' <name>` (by its full path: the pane starts in the project's root, not in `<rig>`). The orchestrator reads what Refocus printed, runs `lanes.ps1` to start any missing lane (it repeats every line that is not "running" or "started", such as a dialog to answer in a lane's pane) and tells you in three lines: the mission, the current ticket and what it proposes next. It also repeats every `[rig] WARNING` line first and names any `FILL IN:` paragraph still unwritten.
 2. **Talk.** Most of the time you just talk with the orchestrator about ideas, bugs and trade-offs. When you agree on a piece of work, say "go". The orchestrator then runs [the loop](#3-the-loop-for-a-ticket).
 3. **Briefs.** Each brief is a file under `<rig>\<project>\work\briefs\`. The orchestrator prompts a lane with `herdr agent prompt <lane> "Read <brief> and do it." --wait --timeout 3600000`, and extracts the report with:
 
@@ -417,6 +420,8 @@ node template.test.cjs
 node projects.check.test.cjs
 node content-gate.test.cjs
 powershell -NoProfile -ExecutionPolicy Bypass -File close.selftest.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File rig.selftest.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File lanes.selftest.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File statusline.check.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File wt.selftest.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File new-project.selftest.ps1
@@ -424,14 +429,16 @@ powershell -NoProfile -ExecutionPolicy Bypass -File new-project.selftest.ps1
 
 | Suite | Covers | Count at the last run |
 |---|---|---|
-| `guard.test.cjs` | The guard's decisions: at least one blocked and one allowed case per rule, run on `example` and a second fixture. | 3007 checks |
+| `guard.test.cjs` | The guard's decisions: at least one blocked and one allowed case per rule, run on `example` and a second fixture. | 2916 checks |
 | `helpers.test.cjs` | `report.cjs`, `refocus.cjs`, `context-check.cjs`. | 79 checks |
 | `pms.test.cjs` | The board client's dry runs, refusals and filters, against a fake board on localhost. | 305 checks |
-| `config.test.cjs` | The profile validator, the `.gitignore` globs, `rig.ps1` and the worktree scripts, and that `example`'s settings and lane start lines agree. | 169 checks |
-| `template.test.cjs` | The template: the shared CLAUDE.md section, its one placeholder, its hooks and lane lines against the guard, its FILL IN paragraphs. | 7 checks (6 when there is no local word list) |
+| `config.test.cjs` | The profile validator, the `.gitignore` globs, `rig.ps1`, `lanes.ps1` and the worktree scripts, and `example`'s settings. | 175 checks |
+| `template.test.cjs` | The template: the shared CLAUDE.md section, its one placeholder, its hooks and its `lanes.ps1` line against the guard, its FILL IN paragraphs. | 7 checks (6 when there is no local word list) |
 | `projects.check.test.cjs` | The real-project check below. | 12 cases |
 | `content-gate.test.cjs` | The content gate and the pre-push hook. | 20 cases |
-| `close.selftest.ps1` | `close.ps1` against a fake herdr on an isolated PATH. About a minute. | 61 ok lines |
+| `close.selftest.ps1` | `close.ps1` against a fake herdr on an isolated PATH. About a minute. | 63 ok lines |
+| `rig.selftest.ps1` | `rig.ps1`'s herdr steps against the same fake herdr and a fake `claude`. About 20 seconds. | 35 ok lines |
+| `lanes.selftest.ps1` | `lanes.ps1` against the same fake herdr. About 2 minutes: one case waits out the 15 s retry. | 48 ok lines |
 | `statusline.check.ps1` | The status line output. | 24 ok lines |
 | `wt.selftest.ps1` | The worktree scripts on temp repos. | 18 ok lines |
 | `new-project.selftest.ps1` | `new-project.ps1`, on temp folders only. Slow: about 10 minutes. | 37 ok lines |
@@ -462,6 +469,8 @@ node template.test.cjs
 node projects.check.test.cjs
 node content-gate.test.cjs
 powershell -NoProfile -ExecutionPolicy Bypass -File close.selftest.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File rig.selftest.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File lanes.selftest.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File statusline.check.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File wt.selftest.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File new-project.selftest.ps1
@@ -471,6 +480,8 @@ node projects.check.cjs
 If any of them fails, do not start a shift until you know why.
 
 A pull changes the engine and the `example` template. It does not change your real projects, which are git-ignored: a project made earlier keeps its own copies of the role texts and settings files, so carry a template change over by hand. A lane that was started before the pull keeps the hook commands and role text it started with. Close the shift and start it again after a pull that changes the guard or a settings file.
+
+A project made before `lanes.ps1` still has `herdr agent start` and `herdr pane split` lines in its `rules\orchestrator.md`, and the guard now refuses them. Copy the template's startup steps and its "Starting lanes" section into it, with the project's name in the `lanes.ps1` line, and switch `supermemory@supermemory-plugins` off in its four worker settings files as the template does.
 
 When you change the engine on one machine:
 

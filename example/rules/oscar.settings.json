@@ -10,7 +10,8 @@
     "code-simplifier@claude-plugins-official": false,
     "customerio@customerio": false,
     "i-have-adhd@i-have-adhd": false,
-    "watch@claude-video": false
+    "watch@claude-video": false,
+    "supermemory@supermemory-plugins": false
   },
   "hooks": {
     "PreToolUse": [

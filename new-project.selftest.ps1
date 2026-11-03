@@ -43,9 +43,9 @@ Check ($files.Count -gt 0 -and $text -notmatch '\bex(?=[0-9<-])|"ex"') 'no ex pr
 $p = Get-Content -LiteralPath (Join-Path $proj 'profile.json') -Raw -ErrorAction SilentlyContinue | ConvertFrom-Json
 Check ($p.name -ceq 'home-app' -and $p.ticketPrefix -ceq 'ha' -and $p.root -ceq ($rootA -replace '\\', '/') -and $p.lanes.orchestrator -ceq 'ha-orchestrator' -and $p.lanes.coder -ceq 'ha-coder' -and $p.lanes.pam -ceq 'ha-pam') 'the profile holds the name, the prefix, the root with forward slashes and the ha-<seat> lanes'
 $orch = '' + (Get-Content -LiteralPath (Join-Path $proj 'rules\orchestrator.md') -Raw -Encoding UTF8 -ErrorAction SilentlyContinue)
-$want = @('rig for the project home-app', 'HA-<n>', 'HA-0', 'ha<n>-<slug>', 'ha0-oscar.md', 'herdr agent start ha-coder ', "--cwd '$rootA'", "$rigDir/home-app/rules/coder.settings.json", "& '$rigDir/wt-new.ps1'")
+$want = @('rig for the project home-app', 'HA-<n>', 'HA-0', 'ha<n>-<slug>', 'ha0-oscar.md', 'ha-coder', "& '$rigDir/lanes.ps1' home-app", "Worktree: $rootA\.claude\worktrees\ha<n>-<slug>", "$rigDir/home-app/profile.json", "& '$rigDir/wt-new.ps1'")
 $missing = @($want | Where-Object { -not $orch.Contains($_) })
-Check ($rigDir -and $missing.Count -eq 0) "orchestrator.md names the project, its codes, worktrees, lanes, root (backslashes) and rig folder (missing: $($missing -join ' | '))"
+Check ($rigDir -and $missing.Count -eq 0) "orchestrator.md names the project, its codes, worktrees, lanes, lanes.ps1 line, root (backslashes) and rig folder (missing: $($missing -join ' | '))"
 $ex = Join-Path $rig 'example'
 Check ((@(Rel $ex) -join '|') -ceq (@(Rel $proj) -join '|')) 'the new project has the template files, no more and no fewer'
 $empty = @(Get-ChildItem -LiteralPath $ex -Recurse -File | Where-Object { $_.Length -eq 0 } | ForEach-Object { $_.FullName.Substring($ex.Length) })
@@ -60,7 +60,7 @@ $rootB = New-Dir 'root-ex-1-example-project'
 $code = New-Project $rig 'ex-example' $rootB 'et'
 $p = Get-Content -LiteralPath (Join-Path $rig 'ex-example\profile.json') -Raw -ErrorAction SilentlyContinue | ConvertFrom-Json
 $orch = '' + (Get-Content -LiteralPath (Join-Path $rig 'ex-example\rules\orchestrator.md') -Raw -Encoding UTF8 -ErrorAction SilentlyContinue)
-Check ($code -eq 0 -and $p.name -ceq 'ex-example' -and $p.root -ceq ($rootB -replace '\\', '/') -and $p.lanes.coder -ceq 'et-coder' -and $orch.Contains('rig for the project ex-example') -and $orch.Contains("--cwd '$rootB'") -and $orch.Contains("$rigDir/ex-example/rules/coder.settings.json")) "a name ex-example and a root ...\root-ex-1-example-project come out whole (exit $code)"
+Check ($code -eq 0 -and $p.name -ceq 'ex-example' -and $p.root -ceq ($rootB -replace '\\', '/') -and $p.lanes.coder -ceq 'et-coder' -and $orch.Contains('rig for the project ex-example') -and $orch.Contains("Worktree: $rootB\.claude\worktrees\et<n>-<slug>") -and $orch.Contains("& '$rigDir/lanes.ps1' ex-example")) "a name ex-example and a root ...\root-ex-1-example-project come out whole (exit $code)"
 
 # 2. Each refusal: one line, exit 1, nothing written anywhere under the temp folder.
 $aFile = Join-Path $tmp 'a-file.txt'

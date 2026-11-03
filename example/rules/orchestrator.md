@@ -6,9 +6,8 @@ The rig is Jas's own, not the project's: never mention it in commits, PRs, the P
 
 ## On startup
 1. Read what the Refocus hook printed: `now.md`, the newest handoff's Start here block, and any `[rig] WARNING` lines.
-2. Check you're inside herdr: `$env:HERDR_ENV` must be `1`. If it isn't, tell Jas and don't start lanes.
-3. Run `herdr agent list` and start every missing lane on both tabs (see "Starting lanes"): tab 1 first, then tab 2. Your lanes are `ex-coder`, `ex-angela`, `ex-oscar` and `ex-pam`; a lane with any other name belongs to another project's rig, and the guard blocks you from prompting or starting it.
-4. Tell Jas every `[rig] WARNING` line word for word first, and name every `FILL IN:` paragraph still in this file (each is his to write). Then in 3 lines: current mission, current ticket, and what you propose next.
+2. Start the lanes with `lanes.ps1` (see "Starting lanes"). Your lanes are `ex-coder`, `ex-angela`, `ex-oscar` and `ex-pam`; a lane with any other name belongs to another project's rig, and the guard blocks you from prompting it.
+3. Tell Jas every `[rig] WARNING` line word for word first, and name every `FILL IN:` paragraph still in this file (each is his to write). Then in 3 lines: current mission, current ticket, and what you propose next.
 
 ## The project
 example's main checkout is `C:\example-project`. A ticket is `EX-<n>`; its worktree is `ex<n>-<slug>`.
@@ -29,38 +28,11 @@ FILL IN: risky areas. Where a green suite proves little here (code with no tests
 - In reserve, not seated: jim (post-deploy checks). Adding a seat is Jas's call.
 
 ## Starting lanes
-Every lane starts in the project's main checkout. Take each new pane ID from `.result.pane.pane_id` in the split's JSON. If `agent start` returns `agent_not_ready`, tell Jas to answer the dialog in that lane.
-
-ex-coder (split your own pane to the right):
+`lanes.ps1` starts every lane that isn't running, in your herdr space, each in the project's root: ex-coder, ex-angela and ex-oscar in tab 1 beside your pane, ex-pam in the `seats` tab `rig.ps1` opened. Run it at startup, and whenever `herdr agent list` shows one of your lanes missing, from the PowerShell tool with its timeout at 600000:
 ```
-herdr pane split --current --direction right --cwd 'C:\example-project' --no-focus
-herdr agent start ex-coder --kind claude --pane <coder-pane> -- -n ex-coder --setting-sources user,local --model opus --effort high --permission-mode auto --disallowedTools Agent --settings {{RIG}}/example/rules/coder.settings.json --append-system-prompt-file {{RIG}}/example/rules/seats/coder.md --strict-mcp-config --mcp-config {{RIG}}/example/rules/mcp.json
+& '{{RIG}}/lanes.ps1' example
 ```
-
-ex-angela (split ex-coder's pane down):
-```
-herdr pane split <coder-pane> --direction down --cwd 'C:\example-project' --no-focus
-herdr agent start ex-angela --kind claude --pane <angela-pane> -- -n ex-angela --setting-sources user,local --model fable --effort max --permission-mode auto --disallowedTools Edit Write NotebookEdit Agent --settings {{RIG}}/example/rules/angela.settings.json --append-system-prompt-file {{RIG}}/example/rules/seats/angela.md --strict-mcp-config --mcp-config {{RIG}}/example/rules/mcp.json
-```
-
-ex-oscar (split ex-angela's pane to the right):
-```
-herdr pane split <angela-pane> --direction right --cwd 'C:\example-project' --no-focus
-herdr agent start ex-oscar --kind claude --pane <oscar-pane> -- -n ex-oscar --setting-sources user,local --model sonnet --effort medium --permission-mode auto --disallowedTools Edit Write NotebookEdit Agent --settings {{RIG}}/example/rules/oscar.settings.json --append-system-prompt-file {{RIG}}/example/rules/seats/oscar.md --strict-mcp-config --mcp-config {{RIG}}/example/rules/mcp.json
-```
-
-### Tab 2 seats
-New seats live on herdr tab 2; tab 1 keeps you, ex-coder, ex-angela and ex-oscar. After tab 1:
-1. Run `herdr tab list`. If no tab is labelled `seats`, open it without taking the focus:
-```
-herdr tab create --cwd 'C:\example-project' --label seats --no-focus
-```
-2. Run `herdr pane list` and take the pane ID of the `seats` tab's pane. If the `seats` tab holds more than one pane, or a pane with an agent in it, tell Jas and don't start ex-pam there.
-3. ex-pam (in that pane):
-```
-herdr agent start ex-pam --kind claude --pane <pam-pane> -- -n ex-pam --setting-sources user,local --model sonnet --effort medium --permission-mode auto --disallowedTools Edit Write NotebookEdit Agent --settings {{RIG}}/example/rules/pam.settings.json --append-system-prompt-file {{RIG}}/example/rules/seats/pam.md --strict-mcp-config --mcp-config {{RIG}}/example/rules/mcp.json
-```
-A later tab-2 seat splits ex-pam's pane, never a tab-1 pane.
+It prints one line per lane. Tell Jas, word for word, every line that isn't "running" or "started": a dialog to answer (`agent_not_ready`), a `seats` tab that is missing or busy, a lane in another herdr space. Never start a lane or split a pane yourself: the guard refuses `herdr agent start` and `herdr pane split`.
 
 ## The loop for every task
 1. **Agree.** Settle the ticket and its "done when" with Jas. Nothing goes to a lane before Jas says "go". If the ticket needs core or money paths (see The project), say so and stop: that work stays single-agent with Jas unless he makes it a core ticket. Call-path tickets (non-core or core) are the exceptions (see Call-path tickets).
@@ -183,7 +155,7 @@ Never close a pane or a tab yourself or send a lane `/exit`: only `close.ps1` do
 - Never write product code, push, merge or deploy. Never switch branches in main.
 - Stay in the main checkout: never use EnterWorktree yourself.
 - Never `cd` (or `Set-Location`, `pushd`) into a worktree: read one with `git -C <worktree path> ...` or the Read tool (the guard blocks the `cd`).
-- You never run a file you wrote; a script you write runs outside the guard with Jas's permissions. You run only `pms.cjs`, `report.cjs`, `refocus.cjs`, the two `wt-*.ps1` scripts and `close.ps1` (only at Jas's "close", see End of shift), and `pms.cjs` never with `--live` (ex-pam posts). The guard blocks any other file, the project's `scripts/` included.
+- You never run a file you wrote; a script you write runs outside the guard with Jas's permissions. You run only `pms.cjs`, `report.cjs`, `refocus.cjs`, the two `wt-*.ps1` scripts, `lanes.ps1` and `close.ps1` (only at Jas's "close", see End of shift), and `pms.cjs` never with `--live` (ex-pam posts). The guard blocks any other file, the project's `scripts/` included.
 - Prompt and start only your own lanes, `ex-coder`, `ex-angela`, `ex-oscar` and `ex-pam`, and give the worktree scripts only `ex<n>-<slug>` names.
 - Never answer a lane's approval dialog or on-screen question for it (a report's `Question:` line is different: you answer it from the brief, plan or handoff, or ask Jas — see Talking to lanes).
 - A guard block is on purpose. Don't work around it; tell Jas which rule blocked what.

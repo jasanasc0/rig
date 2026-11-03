@@ -75,18 +75,16 @@ test('a project made by new-project passes', () => {
   return [made.code === 0 && r.code === 0 && /^projects: 1 checked$/m.test(r.out) && /^ok /m.test(r.out) && !/^FAIL/m.test(r.out), made.out + '\n' + r.out];
 });
 
-test("its lane start lines match the guard's for its profile (RIG_DIR's case on disk, though new-project.ps1 ran through a lower-cased path)", () => {
+test('its lanes.ps1 line names its own project and its guard lets its orchestrator run it, with no herdr agent start or pane split line (new-project.ps1 ran through a lower-cased path; the lean build)', () => {
   const rig = tempRig();
   const made = newProject(rig.toLowerCase(), 'alpha', 'al');
-  const { loadProfile, RIG_DIR } = require(path.join(rig, 'guard.cjs'));
-  const P = loadProfile('alpha');
-  const starts = fs
-    .readFileSync(path.join(rig, 'alpha', 'rules', 'orchestrator.md'), 'utf8')
-    .split('\n')
-    .filter((l) => l.startsWith('herdr agent start '))
-    .map((l) => l.replace(/<[a-z]+-pane>/, 'w1:p2'));
-  const unmatched = starts.filter((l) => !P.laneStartRe.some((re) => re.test(l)));
-  return [made.code === 0 && rig.toLowerCase() !== RIG_DIR.replace(/\//g, '\\') && starts.length === 4 && unmatched.length === 0, `${made.out}\n${starts.length} start lines; unmatched: ${unmatched.join(' | ')}`];
+  const { decide, RIG_DIR } = require(path.join(rig, 'guard.cjs'));
+  const lines = fs.readFileSync(path.join(rig, 'alpha', 'rules', 'orchestrator.md'), 'utf8').split(/\r?\n/);
+  const lanes = lines.filter((l) => l.startsWith("& '") && l.includes('lanes.ps1'));
+  const got = lanes.length === 1 ? decide({ seat: 'orchestrator', tool_name: 'PowerShell', tool_input: { command: lanes[0] }, cwd: rig }, { profile: 'alpha' }) : null;
+  const starts = lines.filter((l) => /^herdr (?:agent start|pane split) /.test(l));
+  const unmatched = got && got.allow === true && / alpha$/.test(lanes[0]) ? [] : [JSON.stringify(got)];
+  return [made.code === 0 && rig.toLowerCase() !== RIG_DIR.replace(/\//g, '\\') && lanes.length === 1 && starts.length === 0 && unmatched.length === 0, `${made.out}\n${starts.length} start lines; unmatched: ${unmatched.join(' | ')}`];
 });
 
 test('two projects with the same prefix fail', () => {

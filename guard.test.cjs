@@ -58,11 +58,14 @@ function check(label, ok) {
     console.error('FAIL ' + label);
   }
 }
-// The example orchestrator role, with {{RIG}} (the template's rig folder) filled in as RIGF. Its lane start commands ("Starting
-// lanes") are its lines that start with `herdr agent start `; roleStart('oscar', 'w1:p4') is ex-oscar's with the pane id filled in.
+// The example orchestrator role, with {{RIG}} (the template's rig folder) filled in as RIGF. Its lanes.ps1 line ("Starting lanes") is
+// ROLE_LANES. roleStart('oscar', 'w1:p4') is a start command of the shape lanes.ps1 runs for ex-oscar (the lean build): the orchestrator's
+// own run of any of them is refused, so their flags don't matter here; lanes.selftest.ps1 pins the real ones.
 const ROLE_LINES = fs.readFileSync(path.join(__dirname, 'example', 'rules', 'orchestrator.md'), 'utf8').split('{{RIG}}').join(RIGF).split(/\r?\n/);
-const ROLE_STARTS = ROLE_LINES.filter((line) => line.startsWith('herdr agent start '));
-const roleStart = (seat, pane) => (ROLE_STARTS.find((line) => line.startsWith(`herdr agent start ex-${seat} `)) || '').replace(/<[a-z]+-pane>/, pane);
+const ROLE_LANES = ROLE_LINES.filter((line) => line.startsWith("& '") && line.includes('lanes.ps1'));
+const roleStart = (seat, pane) =>
+  `herdr agent start ex-${seat} --kind claude --pane ${pane} -- -n ex-${seat} --setting-sources user,local --model opus --effort high --permission-mode auto ` +
+  `--settings ${RIGF}/example/rules/${seat}.settings.json --append-system-prompt-file ${RIGF}/example/rules/seats/${seat}.md --strict-mcp-config --mcp-config ${RIGF}/example/rules/mcp.json`;
 
 // HC: a guard copy in a temp home folder H (H\rig: guard.cjs, example\ and the second fixture, sample\), loaded with USERPROFILE set to
 // H, so its home is H and its rig H\rig. sample's root is under H, so ~ and $HOME spell it; it has a board script and projectSettings
@@ -216,7 +219,8 @@ t('orchestrator EnterWorktree blocked', 'orchestrator', 'EnterWorktree', {}, fal
 t('orchestrator runs wt-new', 'orchestrator', 'PowerShell', sh(`& '${RIG}\\wt-new.ps1' ex1-demo`), true);
 t('coder runs wt-new blocked', 'coder', 'PowerShell', sh(`& '${RIG}\\wt-new.ps1' ex1-demo`), false);
 t('orchestrator reads a lane report', 'orchestrator', 'Bash', sh(`herdr agent read ex-coder --source recent-unwrapped --lines 400 | node ${RIGF}/report.cjs --ticket EX-1`), true);
-t('orchestrator starts a lane', 'orchestrator', 'PowerShell', sh(roleStart('oscar', 'w1:p4')), true);
+t('orchestrator starts its lanes with lanes.ps1', 'orchestrator', 'PowerShell', sh(`& '${RIG}\\lanes.ps1' example`), true);
+t('orchestrator herdr agent start of a lane blocked (lanes.ps1 starts them)', 'orchestrator', 'PowerShell', sh(roleStart('oscar', 'w1:p4')), false);
 t('orchestrator git pull blocked', 'orchestrator', 'Bash', sh('git pull --ff-only'), false);
 t('orchestrator git fetch allowed', 'orchestrator', 'Bash', sh('git fetch origin'), true);
 
@@ -507,7 +511,6 @@ t('coder cp onto guard.cjs through a long .. path blocked', 'coder', 'Bash', sh(
 t('coder Copy-Item onto rig. (trailing dot) blocked', 'coder', 'PowerShell', sh('Copy-Item x.cjs ' + RIG + '.\\guard.cjs'), false);
 hc('coder cp onto guard.cjs through $USERPROFILE blocked', 'coder', 'Bash', sh('cp x.cjs $USERPROFILE/rig/guard.cjs'), false);
 t('orchestrator redirect into the inbox blocked', 'orchestrator', 'Bash', sh(`echo hi > ${RIGF}/example/work/inbox/x.md`), false);
-t('orchestrator herdr agent start with its three rig flags allowed', 'orchestrator', 'PowerShell', sh(roleStart('oscar', 'w1:p4')), true);
 t('orchestrator herdr prompt naming a brief allowed', 'orchestrator', 'Bash', sh(`herdr agent prompt ex-coder "Read ${RIG}\\example\\work\\briefs\\ex12-coder.md and do it." --wait --timeout 3600000`), true);
 t('orchestrator piping a lane report into report.cjs allowed', 'orchestrator', 'Bash', sh(`herdr agent read ex-coder --source recent-unwrapped --lines 400 | node ${RIGF}/report.cjs --ticket EX-12`), true);
 t('orchestrator wt-new with a slug allowed', 'orchestrator', 'PowerShell', sh(`& '${RIG}\\wt-new.ps1' ex12-sample-copy-task`), true);
@@ -541,7 +544,6 @@ t('orchestrator cat of a work note allowed', 'orchestrator', 'Bash', sh(`cat ${R
 t('orchestrator cat of an inbox note blocked', 'orchestrator', 'Bash', sh(`cat ${RIGF}/example/work/inbox/x.md`), false);
 t('orchestrator cat of a vault setting blocked', 'orchestrator', 'Bash', sh(`cat ${RIGF}/example/work/.obsidian/app.json`), false);
 t('orchestrator cat of a work path that steps out through .. blocked', 'orchestrator', 'Bash', sh(`cat ${RIGF}/example/work/../rules/coder.settings.json`), false);
-t('orchestrator herdr agent start then cat of guard.cjs blocked', 'orchestrator', 'PowerShell', sh(`herdr agent start ex-oscar --kind claude --pane w1:p4 -- --settings ${RIGF}/example/rules/oscar.settings.json ; cat ${RIGF}/guard.cjs`), false);
 t('orchestrator --settings outside herdr agent start blocked', 'orchestrator', 'Bash', sh(`echo --settings ${RIGF}/example/rules/oscar.settings.json`), false);
 
 // v3 Task 2b, B: inline interpreter code can't be checked, for every seat
@@ -744,12 +746,6 @@ t('orchestrator herdr agent prompt to a pane id blocked', 'orchestrator', 'Bash'
 t('orchestrator Start-Process herdr blocked', 'orchestrator', 'PowerShell', sh("Start-Process herdr -ArgumentList 'pane run w1:p3 x'"), false);
 t('orchestrator herdr pane run after a semicolon blocked', 'orchestrator', 'Bash', sh('git status; herdr pane run w1:p3 x'), false);
 t('orchestrator herdr.exe by full path agent send-keys blocked', 'orchestrator', 'PowerShell', sh(String.raw`& 'C:\Users\dev\AppData\Local\herdr\herdr.exe' agent send-keys coder enter`), false);
-t('orchestrator herdr agent start of another agent name blocked', 'orchestrator', 'Bash', sh('herdr agent start helper --kind claude --pane w1:p2 -- --model haiku'), false);
-t('orchestrator herdr agent start with skip-permissions only blocked', 'orchestrator', 'Bash', sh('herdr agent start ex-coder --kind claude --pane w1:p2 -- --dangerously-skip-permissions'), false);
-t('orchestrator old shortened oscar start command blocked (V3-R20)', 'orchestrator', 'PowerShell', sh(`herdr agent start ex-oscar --kind claude --pane w1:p4 -- --model sonnet --disallowedTools Edit Write NotebookEdit Agent --settings ${RIGF}/example/rules/oscar.settings.json`), false);
-t('orchestrator exact coder start command plus --dangerously-skip-permissions blocked', 'orchestrator', 'Bash', sh(roleStart('coder', 'w1:p2') + ' --dangerously-skip-permissions'), false);
-t('orchestrator exact coder start command with the orchestrator settings file blocked', 'orchestrator', 'Bash', sh(roleStart('coder', 'w1:p2').replace('coder.settings.json', 'orchestrator.settings.json')), false);
-t('orchestrator exact oscar start command then cat of guard.cjs blocked', 'orchestrator', 'Bash', sh(roleStart('oscar', 'w1:p2') + ` ; cat ${RIGF}/guard.cjs`), false);
 t('orchestrator herdr agent prompt to coder with a brief allowed', 'orchestrator', 'Bash', sh(`herdr agent prompt ex-coder "Read ${RIG}\\example\\work\\briefs\\ex12-coder.md and do it." --wait --timeout 3600000`), true);
 t('orchestrator herdr agent prompt ex-oscar /clear allowed', 'orchestrator', 'Bash', sh('herdr agent prompt ex-oscar "/clear"'), true);
 t('orchestrator herdr agent get allowed', 'orchestrator', 'Bash', sh('herdr agent get ex-angela'), true);
@@ -759,8 +755,6 @@ t('orchestrator herdr pane list allowed', 'orchestrator', 'Bash', sh('herdr pane
 t('orchestrator herdr pane read allowed', 'orchestrator', 'Bash', sh('herdr pane read w1:p2 --source recent --lines 50'), true);
 t('orchestrator herdr workspace list allowed', 'orchestrator', 'Bash', sh('herdr workspace list'), true);
 t('orchestrator herdr agent --help allowed', 'orchestrator', 'Bash', sh('herdr agent --help'), true);
-t('orchestrator herdr pane split of its own pane allowed', 'orchestrator', 'PowerShell', sh(String.raw`herdr pane split --current --direction right --cwd 'C:\example-project' --no-focus`), true);
-t('orchestrator herdr pane split of another pane allowed', 'orchestrator', 'PowerShell', sh(String.raw`herdr pane split w1:p2 --direction down --cwd 'C:\example-project' --no-focus`), true);
 // C, more: the rest of herdr's groups and subcommands, options in front of the group, and the command positions
 for (const sub of [
   'agent attach coder',
@@ -828,8 +822,8 @@ t('orchestrator herdr pane run added to a variable blocked', 'orchestrator', 'Po
 t('orchestrator herdr pane run assigned to a typed variable blocked', 'orchestrator', 'PowerShell', sh('[string]$r = herdr pane run w1:p3 x'), false);
 t('orchestrator herdr pane run assigned to a scoped variable after another statement blocked', 'orchestrator', 'PowerShell', sh('$env:X = 1; $script:r = herdr pane run w1:p3 x'), false);
 t('orchestrator obsidian eval assigned to a variable blocked', 'orchestrator', 'PowerShell', sh('$out = obsidian vault=docs eval code=1'), false);
-t('orchestrator herdr pane split captured in a variable allowed', 'orchestrator', 'PowerShell', sh(String.raw`$s = herdr pane split --current --direction right --cwd 'C:\example-project' --no-focus | ConvertFrom-Json`), true);
-t('orchestrator pane id read from the split JSON allowed', 'orchestrator', 'PowerShell', sh(String.raw`$id = (herdr pane split w1:p2 --direction down --cwd 'C:\example-project' --no-focus | ConvertFrom-Json).result.pane.pane_id`), true);
+t('orchestrator herdr pane list captured in a variable allowed', 'orchestrator', 'PowerShell', sh('$s = herdr pane list'), true);
+t('orchestrator a pane id read from herdr JSON allowed', 'orchestrator', 'PowerShell', sh('$id = (herdr agent get ex-coder | ConvertFrom-Json).result.agent.pane_id'), true);
 t('orchestrator a quoted herdr string assigned to a variable allowed', 'orchestrator', 'PowerShell', sh("$h = 'herdr pane run w1:p3 x'; Write-Host $h"), true);
 t('checker $null = New-Item blocked', 'checker', 'PowerShell', sh('$null = New-Item x.txt'), false);
 t('checker variables assigned from read-only commands allowed', 'checker', 'PowerShell', sh('$files = Get-ChildItem src; $n = (Get-Content package.json).Length; $env:NODE_ENV = "test"'), true);
@@ -837,23 +831,6 @@ t('orchestrator two allowed herdr commands allowed', 'orchestrator', 'Bash', sh(
 t('orchestrator herdr after a variable assignment allowed', 'orchestrator', 'Bash', sh('X=1 herdr agent list'), true);
 t('orchestrator herdr agent list piped into a filter allowed', 'orchestrator', 'PowerShell', sh('herdr agent list | Select-String coder'), true);
 t('orchestrator naming herdr as an argument is not a herdr command', 'orchestrator', 'Bash', sh('git log --oneline --grep herdr'), true);
-// C, the pane id of the lane start commands
-t('orchestrator start command with a numeric pane id allowed', 'orchestrator', 'Bash', sh(roleStart('coder', '3')), true);
-t('orchestrator start command with a pane id of letters, digits and : . _ - allowed', 'orchestrator', 'Bash', sh(roleStart('angela', 'w_1.p-2:x')), true);
-t('orchestrator start command with several spaces between the tokens allowed', 'orchestrator', 'Bash', sh(roleStart('coder', 'w1:p2').replace(/ /g, '   ')), true);
-t('orchestrator start command with blanks before and after allowed', 'orchestrator', 'Bash', sh('  ' + roleStart('oscar', 'w1:p2') + '  \n'), true);
-t('orchestrator start command with a quoted pane id blocked', 'orchestrator', 'Bash', sh(roleStart('coder', '"w1:p2"')), false);
-t('orchestrator start command with a flag as the pane id blocked', 'orchestrator', 'Bash', sh(roleStart('coder', '--dangerously-skip-permissions')), false);
-t('orchestrator start command with a pane id that chains a command blocked', 'orchestrator', 'Bash', sh(roleStart('coder', 'w1:p2;calc')), false);
-t('orchestrator start command for angela with the coder flags blocked', 'orchestrator', 'Bash', sh(roleStart('coder', 'w1:p2').replace('start ex-coder', 'start ex-angela')), false);
-t('orchestrator start command with another kind blocked', 'orchestrator', 'Bash', sh(roleStart('coder', 'w1:p2').replace('--kind claude', '--kind codex')), false);
-t('orchestrator start command without --strict-mcp-config blocked', 'orchestrator', 'Bash', sh(roleStart('coder', 'w1:p2').replace(' --strict-mcp-config', '')), false);
-t('orchestrator start command with another model blocked', 'orchestrator', 'Bash', sh(roleStart('coder', 'w1:p2').replace('--model opus', '--model haiku')), false);
-t('orchestrator start command split over two lines blocked', 'orchestrator', 'Bash', sh(roleStart('coder', 'w1:p2').replace(' --kind', '\n--kind')), false);
-t('orchestrator start command after a cd blocked', 'orchestrator', 'Bash', sh('cd C:/x; ' + roleStart('coder', 'w1:p2')), false);
-t('orchestrator start command with a --timeout blocked', 'orchestrator', 'Bash', sh(roleStart('coder', 'w1:p2') + ' --timeout 300000'), false);
-t('orchestrator start command through env blocked', 'orchestrator', 'Bash', sh('env ' + roleStart('coder', 'w1:p2')), false);
-t('orchestrator start command with a redirect blocked', 'orchestrator', 'Bash', sh(roleStart('coder', 'w1:p2') + ' > out.txt'), false);
 // C, quiet redirects (2>&1, 2>$null) are not words of the command; a redirect that writes a file still is a write
 t('orchestrator herdr --help with 2>&1 allowed', 'orchestrator', 'Bash', sh('herdr --help 2>&1 | head -80'), true);
 t('orchestrator herdr --version with 2>&1 allowed', 'orchestrator', 'Bash', sh('herdr --version 2>&1 | head -3'), true);
@@ -873,18 +850,34 @@ t('orchestrator a quoted herdr at the very end of the command is counted (?? bla
 t('orchestrator a quoted herdr at the very end of the command (PowerShell) blocked', 'orchestrator', 'PowerShell', sh('echo "a;/herdr"'), false);
 tr('an orchestrator herdr send-keys is a seat-limits block', 'orchestrator', 'Bash', sh('herdr agent send-keys coder enter'), 'seat-limits');
 tr('an orchestrator herdr launcher is a seat-limits block', 'orchestrator', 'PowerShell', sh('Start-Process herdr -ArgumentList "pane run w1:p3 x"'), 'seat-limits');
-// The role tie: orchestrator.md and the guard must agree on the four lane start commands (a flag changed in one place only fails here;
-// pam build: pam's, on tab 2, is the fourth)
-check(
-  'the orchestrator role has exactly four herdr agent start lines, one each for ex-coder, ex-angela, ex-oscar and ex-pam',
-  ROLE_STARTS.length === 4 && ['coder', 'angela', 'oscar', 'pam'].every((seat) => ROLE_STARTS.filter((line) => line.startsWith(`herdr agent start ex-${seat} `)).length === 1)
-);
+// The role tie (the lean build): the orchestrator role starts its lanes only with lanes.ps1 (its line is allowed for the orchestrator in
+// ROLE_PLAN_O, below) and no worker may run it; a start command of the shape lanes.ps1 runs is blocked for every seat.
+check('the example role has one lanes.ps1 line, for example', ROLE_LANES.length === 1 && ROLE_LANES[0] === `& '${RIGF}/lanes.ps1' example`);
+for (const seat of ['coder', 'checker', 'pam']) t(`the role's lanes.ps1 line blocked for ${seat}`, seat, 'PowerShell', sh(ROLE_LANES[0] || 'lanes.ps1 example'), false);
+const LANES_RUN = `lanes.ps1 starts the lanes. Run & '${RIG}\\lanes.ps1' example`;
 for (const lane of ['coder', 'angela', 'oscar', 'pam']) {
-  const startCmd = roleStart(lane, 'w1:p2');
-  t(`role start line for ${lane} allowed for the orchestrator`, 'orchestrator', 'PowerShell', sh(startCmd), true);
-  t(`role start line for ${lane} blocked for coder`, 'coder', 'PowerShell', sh(startCmd), false);
-  t(`role start line for ${lane} blocked for checker`, 'checker', 'PowerShell', sh(startCmd), false);
+  tr(`a start command for ex-${lane} blocked for the orchestrator: the reason names lanes.ps1`, 'orchestrator', 'PowerShell', sh(roleStart(lane, 'w1:p2')), 'seat-limits', [LANES_RUN]);
+  t(`a start command for ex-${lane} blocked for coder`, 'coder', 'PowerShell', sh(roleStart(lane, 'w1:p2')), false);
+  t(`a start command for ex-${lane} blocked for checker`, 'checker', 'PowerShell', sh(roleStart(lane, 'w1:p2')), false);
 }
+// The lean build: the orchestrator's own herdr agent start and pane split are refused in every form, --help included, with a reason that
+// names lanes.ps1 and its own project; a call inside a scriptblock, captured in a variable or after a pipe is found and refused too.
+for (const tool of ['Bash', 'PowerShell'])
+  for (const c of [
+    "herdr pane split --current --direction right --cwd 'C:\\example-project' --no-focus",
+    "herdr pane split w1:p2 --direction down --cwd 'C:\\example-project' --no-focus",
+    'herdr pane split',
+    'herdr pane split --help',
+    'herdr pane split -h 2>&1',
+    'herdr agent start',
+    'herdr agent start --help',
+    'herdr agent start ex-coder --kind claude --pane w1:p2 -- --model haiku',
+  ])
+    tr(`orchestrator ${c.slice(0, 70)} blocked: the reason names lanes.ps1 (${tool})`, 'orchestrator', tool, sh(c), 'seat-limits', [LANES_RUN]);
+t('orchestrator herdr pane split inside a scriptblock blocked', 'orchestrator', 'PowerShell', sh('if ($true) { herdr pane split --current }'), false);
+t('orchestrator herdr pane split captured in a variable blocked', 'orchestrator', 'PowerShell', sh('$s = herdr pane split --current --direction right'), false);
+t('orchestrator herdr pane split after a pipe blocked', 'orchestrator', 'Bash', sh('echo x | herdr pane split --current'), false);
+t('orchestrator herdr agent --help and pane --help still allowed', 'orchestrator', 'PowerShell', sh('herdr agent --help; herdr pane --help'), true);
 
 // v3 Task 4b fix (V3-R23), C: `herdr agent prompt` text never starts with ! (Claude Code's bash mode, which runs it as a shell command past
 // the lane's guard), # or a / command other than /clear. A ! or # later in the text is fine.
@@ -965,53 +958,14 @@ tr('a # prompt is a seat-limits block', 'orchestrator', 'Bash', sh('herdr agent 
 tr('a / prompt is a seat-limits block that names /clear', 'orchestrator', 'Bash', sh('herdr agent prompt ex-coder "/model opus"'), 'seat-limits', ['starts with /', '/clear']);
 tr('an unreadable prompt is a seat-limits block', 'orchestrator', 'PowerShell', sh('herdr agent prompt ex-coder $msg'), 'seat-limits', ['same line']);
 
-// v3 Task 4b fix (V3-R23), C: `herdr pane split` takes only --current or one pane id, --direction, --ratio, --cwd, --focus and --no-focus
-t('orchestrator pane split with --env BASH_ENV blocked', 'orchestrator', 'PowerShell', sh(String.raw`herdr pane split --current --direction right --env BASH_ENV=x.sh --cwd 'C:\example-project' --no-focus`), false);
-t('orchestrator pane split with --env last blocked', 'orchestrator', 'PowerShell', sh(String.raw`herdr pane split --current --direction right --cwd 'C:\example-project' --no-focus --env PROMPT_COMMAND=x`), false);
-t('orchestrator pane split with -e blocked', 'orchestrator', 'PowerShell', sh('herdr pane split --current -e X=1'), false);
-t('orchestrator pane split of a pane id with a ratio allowed', 'orchestrator', 'PowerShell', sh(String.raw`herdr pane split w1:p2 --direction down --ratio 0.5 --cwd 'C:\example-project' --no-focus`), true);
-t('orchestrator pane split with --env=KEY=VALUE blocked', 'orchestrator', 'PowerShell', sh('herdr pane split --current --env=BASH_ENV=x.sh'), false);
-t('orchestrator pane split with --ENV in upper case blocked', 'orchestrator', 'PowerShell', sh('herdr pane split --current --ENV A=1'), false);
-t('orchestrator pane split with --pane blocked', 'orchestrator', 'PowerShell', sh('herdr pane split --pane w1:p2 --direction right'), false);
-t('orchestrator pane split with --right-click blocked', 'orchestrator', 'PowerShell', sh('herdr pane split --current --right-click herdr'), false);
-t('orchestrator pane split with an abbreviated option blocked', 'orchestrator', 'PowerShell', sh('herdr pane split --current --dir right'), false);
-t('orchestrator pane split with an unknown short option blocked', 'orchestrator', 'PowerShell', sh('herdr pane split --current -x'), false);
-t('orchestrator pane split with -- blocked', 'orchestrator', 'PowerShell', sh('herdr pane split --current -- x'), false);
-t('orchestrator pane split with two pane ids blocked', 'orchestrator', 'PowerShell', sh('herdr pane split w1:p2 w1:p3'), false);
-t('orchestrator pane split with an option as the value of --cwd blocked', 'orchestrator', 'PowerShell', sh('herdr pane split --current --cwd --env X=1'), false);
-t('orchestrator pane split with a dangling --direction blocked', 'orchestrator', 'PowerShell', sh('herdr pane split --current --direction'), false);
-t('orchestrator pane split with --help and --env blocked', 'orchestrator', 'PowerShell', sh('herdr pane split --help --env X=1'), false);
-t('orchestrator pane split with --env after a pipe blocked', 'orchestrator', 'Bash', sh('echo x | herdr pane split --current --env A=1'), false);
-t('orchestrator pane split with --env captured in a variable blocked', 'orchestrator', 'PowerShell', sh('$s = herdr pane split --current --env A=1 | ConvertFrom-Json'), false);
-t('orchestrator pane split with --env after a semicolon blocked', 'orchestrator', 'Bash', sh('herdr pane list; herdr pane split --current --env A=1'), false);
-t('orchestrator pane split with --focus allowed', 'orchestrator', 'PowerShell', sh('herdr pane split --current --focus'), true);
-t('orchestrator pane split with = values blocked (herdr rejects them)', 'orchestrator', 'PowerShell', sh('herdr pane split --current --direction=right --ratio=0.4 --cwd=C:\\x'), false);
-t('orchestrator pane split with a double quote inside a single-quoted cwd blocked (PowerShell 5.1 splits it into arguments)', 'orchestrator', 'PowerShell', sh(`herdr pane split --current --direction right --cwd 'x" --env A=1 "y'`), false);
-t('orchestrator pane split with a command substitution in the cwd blocked', 'orchestrator', 'Bash', sh('herdr pane split --current --direction right --cwd "$(pwd)" --no-focus'), false);
-t('orchestrator pane split with a backtick in the cwd blocked', 'orchestrator', 'PowerShell', sh('herdr pane split --current --cwd "C:\\x`" --env A=1 `"y"'), false);
-t('orchestrator pane split with a here-string cwd blocked', 'orchestrator', 'PowerShell', sh("herdr pane split --current --direction right --cwd @'\nC:\\x\" --env A=1 \"\n'@"), false);
-t('orchestrator pane split with a parenthesised cwd blocked', 'orchestrator', 'PowerShell', sh('herdr pane split --current --direction right --cwd (Get-Location)'), false);
-t('orchestrator pane split with a plain variable as the cwd allowed', 'orchestrator', 'PowerShell', sh('herdr pane split --current --direction right --cwd $PWD --no-focus'), true);
-t('orchestrator pane split with a variable and a path as the cwd blocked', 'orchestrator', 'PowerShell', sh('herdr pane split --current --direction right --cwd $HOME\\x --no-focus'), false);
-t('orchestrator pane split with a quoted cwd holding a blank allowed', 'orchestrator', 'PowerShell', sh(String.raw`herdr pane split --current --cwd 'C:\Program Files\x' --no-focus`), true);
-t('orchestrator pane split with an unquoted cwd allowed', 'orchestrator', 'PowerShell', sh(String.raw`herdr pane split --current --direction right --cwd C:\example-project --no-focus`), true);
-t('orchestrator pane split in the skill form with a double-quoted $PWD allowed', 'orchestrator', 'Bash', sh('herdr pane split --current --direction right --cwd "$PWD" --no-focus'), true);
-t('orchestrator pane split with no arguments allowed', 'orchestrator', 'Bash', sh('herdr pane split'), true);
-t('orchestrator pane split --help allowed', 'orchestrator', 'Bash', sh('herdr pane split --help'), true);
-t('orchestrator pane split -h with 2>&1 allowed', 'orchestrator', 'Bash', sh('herdr pane split -h 2>&1'), true);
-t('orchestrator pane split with a quiet redirect allowed', 'orchestrator', 'Bash', sh(String.raw`herdr pane split --current --direction right --cwd 'C:\x' --no-focus 2>&1`), true);
-t('orchestrator pane split reading the new pane id in a pipeline allowed', 'orchestrator', 'PowerShell', sh(String.raw`$id = (herdr pane split --current --direction right --cwd 'C:\example-project' --no-focus | ConvertFrom-Json).result.pane.pane_id`), true);
-t('orchestrator pane split inside a scriptblock allowed', 'orchestrator', 'PowerShell', sh(String.raw`if ($true) { herdr pane split --current --direction right --cwd 'C:\example-project' --no-focus }`), true);
-t('orchestrator pane split in a foreach scriptblock allowed', 'orchestrator', 'PowerShell', sh("foreach ($i in 1..2) { herdr pane split --current --direction right --no-focus }"), true);
-t('orchestrator pane split with no options inside a scriptblock allowed', 'orchestrator', 'PowerShell', sh('if ($true) { herdr pane split }'), true);
-t('orchestrator pane split with --env inside a scriptblock blocked', 'orchestrator', 'PowerShell', sh('if ($true) { herdr pane split --current --env A=1 }'), false);
-t('orchestrator pane split with --env after the closing brace blocked', 'orchestrator', 'PowerShell', sh('if ($true) { herdr pane split --current } --env A=1'), false);
+// v3 Task 4b fix (V3-R23), C: a herdr call inside a scriptblock is checked like any other, and a word after its closing brace counts as
+// one of its arguments (the lean build: shown with herdr agent read, since the orchestrator no longer splits panes).
+t('orchestrator herdr agent read with --remote after the closing brace blocked', 'orchestrator', 'PowerShell', sh('if ($true) { herdr agent read ex-coder } --remote host'), false);
 t('orchestrator prompt with no text inside a scriptblock blocked', 'orchestrator', 'PowerShell', sh('if ($true) { herdr agent prompt ex-coder }'), false);
 t('orchestrator prompt with only options inside a scriptblock blocked', 'orchestrator', 'PowerShell', sh('if ($true) { herdr agent prompt ex-coder --wait }'), false);
 t('orchestrator prompt starting with ! inside a scriptblock blocked', 'orchestrator', 'PowerShell', sh('if ($true) { herdr agent prompt ex-coder "!ls" }'), false);
 t('orchestrator prompt inside a scriptblock allowed', 'orchestrator', 'PowerShell', sh('if ($true) { herdr agent prompt ex-coder "Read x and do it." --wait }'), true);
 t('orchestrator /clear inside a scriptblock allowed', 'orchestrator', 'PowerShell', sh('foreach ($l in 1..3) { herdr agent prompt ex-coder "/clear" }'), true);
-tr('a pane split --env is a seat-limits block that says why', 'orchestrator', 'PowerShell', sh('herdr pane split --current --env BASH_ENV=x'), 'seat-limits', ['--env', '--current', '--direction', '--ratio', '--cwd', '--no-focus', 'before any guard loads']);
 
 // v3 Task 4b fix round 1 (V3-R24), C1: `command -v <name>` looks a program up and nothing else, so a separator glued to the name ends it
 t('coder command -v claude glued to && then claude blocked', 'coder', 'Bash', sh('command -v claude&&claude -p hi'), false);
@@ -1044,7 +998,7 @@ t('orchestrator herdr command, a lone CR, then herdr send-keys blocked', 'orches
 t('checker lone CR between harmless commands allowed', 'checker', 'PowerShell', sh('Write-Output x\rWrite-Output y'), true);
 t('checker CRLF line endings allowed', 'checker', 'Bash', sh('git status\r\ngit log --oneline\r\n'), true);
 t('orchestrator herdr agent list ended by a CR allowed', 'orchestrator', 'PowerShell', sh('herdr agent list\r'), true);
-t('orchestrator lane start command ended by CRLF allowed', 'orchestrator', 'PowerShell', sh(roleStart('coder', 'w1:p2') + '\r\n'), true);
+t('orchestrator herdr agent list ended by CRLF allowed', 'orchestrator', 'PowerShell', sh('herdr agent list\r\n'), true);
 
 // C2: a herdr or Obsidian call nested in another command's arguments ({ }, $( ), ( ), a backtick, a prompt's text) is checked like any other
 t('orchestrator herdr pane run in an else block after an allowed herdr call blocked', 'orchestrator', 'PowerShell', sh('if (0) { herdr agent list } else { herdr pane run w1:p3 x }'), false);
@@ -1086,7 +1040,12 @@ t('orchestrator herdr agent get ex-coder --session blocked', 'orchestrator', 'Ba
 t('orchestrator herdr agent read --socket blocked', 'orchestrator', 'Bash', sh('herdr agent read ex-coder --socket /tmp/x'), false);
 t('orchestrator herdr agent wait --remote blocked', 'orchestrator', 'Bash', sh('herdr agent wait ex-coder --remote host'), false);
 t('orchestrator herdr pane list --workspace blocked', 'orchestrator', 'Bash', sh('herdr pane list --workspace w1'), false);
-t('orchestrator herdr pane current --current blocked', 'orchestrator', 'Bash', sh('herdr pane current --current'), false);
+// seats build: pane current takes --current (no value) once, so the orchestrator learns its own herdr space from the calling pane;
+// --current twice, a value after it, --pane and every other option stay refused, and no other seat gets it.
+for (const tool of ['Bash', 'PowerShell']) t(`orchestrator herdr pane current --current allowed (${tool})`, 'orchestrator', tool, sh('herdr pane current --current'), true);
+for (const rest of ['--current --current', '--current w1:p1', '--current=w1:p1', '--pane w1:p1', '--pane w1:p1 --current', 'w1:p1', '--current --workspace w1'])
+  t(`orchestrator herdr pane current ${rest} blocked`, 'orchestrator', 'Bash', sh(`herdr pane current ${rest}`), false);
+for (const seat of ['coder', 'checker', 'pam']) t(`${seat} herdr pane current --current blocked`, seat, 'PowerShell', sh('herdr pane current --current'), false);
 t('orchestrator herdr workspace list --json blocked', 'orchestrator', 'Bash', sh('herdr workspace list --json'), false);
 t('orchestrator herdr tab list --workspace blocked', 'orchestrator', 'Bash', sh('herdr tab list --workspace w1'), false);
 t('orchestrator herdr agent prompt --remote after the text blocked', 'orchestrator', 'Bash', sh('herdr agent prompt ex-coder "Read x" --remote host'), false);
@@ -1114,29 +1073,6 @@ t('orchestrator herdr agent read with no options allowed', 'orchestrator', 'Bash
 t('orchestrator herdr agent read by pane id allowed', 'orchestrator', 'Bash', sh('herdr agent read w1:p2 --lines 20'), true);
 tr('an option herdr agent list does not take is a seat-limits block that names it', 'orchestrator', 'Bash', sh('herdr agent list --remote host'), 'seat-limits', ['--remote', 'agent list']);
 
-// I1: a pane split value that PowerShell 5.1 could re-split (a trailing backslash, a double quote), a repeated option, a direction or ratio that is no bare word
-t('orchestrator pane split cwd ending in a backslash shifts a quote and hides --env blocked', 'orchestrator', 'PowerShell', sh(String.raw`herdr pane split --current --cwd 'C:\a b\' --cwd 'x --env A=1 y'`), false);
-t('orchestrator pane split single-quoted cwd ending in a backslash blocked', 'orchestrator', 'PowerShell', sh(String.raw`herdr pane split --current --cwd 'C:\a b\'`), false);
-t('orchestrator pane split double-quoted cwd ending in a backslash blocked', 'orchestrator', 'PowerShell', sh(String.raw`herdr pane split --current --cwd "C:\a b\"`), false);
-t('orchestrator pane split cwd ending in a backslash without a blank blocked', 'orchestrator', 'PowerShell', sh(String.raw`herdr pane split --current --cwd 'C:\ab\'`), false);
-t('orchestrator pane split bare cwd ending in a backslash blocked', 'orchestrator', 'PowerShell', sh('herdr pane split --current --cwd C:\\ab\\'), false);
-t('orchestrator pane split cwd with a double quote inside single quotes blocked', 'orchestrator', 'PowerShell', sh(`herdr pane split --current --cwd 'a"b'`), false);
-t('orchestrator pane split double-quoted cwd with a doubled quote blocked', 'orchestrator', 'PowerShell', sh('herdr pane split --current --cwd "a""b"'), false);
-t('orchestrator pane split --cwd twice blocked', 'orchestrator', 'PowerShell', sh('herdr pane split --current --cwd C:\\a --cwd C:\\b'), false);
-t('orchestrator pane split --direction twice blocked', 'orchestrator', 'PowerShell', sh('herdr pane split --current --direction right --direction down'), false);
-t('orchestrator pane split --ratio twice blocked', 'orchestrator', 'PowerShell', sh('herdr pane split --current --direction right --ratio 0.5 --ratio 0.6'), false);
-t('orchestrator pane split --current twice blocked', 'orchestrator', 'PowerShell', sh('herdr pane split --current --current --direction right'), false);
-t('orchestrator pane split --no-focus twice blocked', 'orchestrator', 'PowerShell', sh('herdr pane split --current --direction right --no-focus --no-focus'), false);
-t('orchestrator pane split direction outside right and down blocked', 'orchestrator', 'PowerShell', sh('herdr pane split --current --direction sideways'), false);
-t('orchestrator pane split quoted direction blocked', 'orchestrator', 'PowerShell', sh("herdr pane split --current --direction 'right'"), false);
-t('orchestrator pane split variable direction blocked', 'orchestrator', 'PowerShell', sh('herdr pane split --current --direction $d'), false);
-t('orchestrator pane split ratio that is no number blocked', 'orchestrator', 'PowerShell', sh('herdr pane split --current --direction right --ratio abc'), false);
-t('orchestrator pane split quoted ratio blocked', 'orchestrator', 'PowerShell', sh("herdr pane split --current --direction right --ratio '0.5'"), false);
-t('orchestrator pane split ratio with trailing text blocked', 'orchestrator', 'PowerShell', sh('herdr pane split --current --direction right --ratio 0.5x'), false);
-t('orchestrator pane split with the role cwd, ratio 1, and a pane id allowed', 'orchestrator', 'PowerShell', sh(String.raw`herdr pane split w1:p2 --direction right --ratio 1 --cwd 'C:\example-project' --focus`), true);
-t('orchestrator pane split with a double-quoted cwd holding a blank allowed', 'orchestrator', 'PowerShell', sh(String.raw`herdr pane split --current --direction down --cwd "C:\Program Files\x"`), true);
-t('orchestrator pane split with a fractional ratio starting with a dot allowed', 'orchestrator', 'PowerShell', sh('herdr pane split --current --direction down --ratio .4'), true);
-tr('a pane split cwd that could be re-split is a seat-limits block that names --cwd', 'orchestrator', 'PowerShell', sh(String.raw`herdr pane split --current --cwd 'C:\a b\'`), 'seat-limits', ['--cwd', 'backslash']);
 
 // v3 Task 4b, D: agents the guard can't see: no Claude Code CLI, no @anthropic-ai/claude-code, for every seat
 t('orchestrator claude -p blocked', 'orchestrator', 'Bash', sh('claude -p "edit the guard" --dangerously-skip-permissions'), false);
@@ -1358,7 +1294,7 @@ t('orchestrator herdr agent get target glued to \\; blocked', 'orchestrator', 'B
 t('orchestrator herdr agent prompt text glued to \\; blocked', 'orchestrator', 'Bash', sh('herdr agent prompt ex-coder hello\\; --remote host'), false);
 t('orchestrator herdr agent get ex-coder \\| --session blocked', 'orchestrator', 'Bash', sh('herdr agent get ex-coder \\| --session x'), false);
 t('orchestrator herdr agent list C:\\; then a second herdr pane run blocked', 'orchestrator', 'PowerShell', sh('herdr agent list C:\\; herdr pane run w1:p3 x'), false);
-t('orchestrator herdr pane split --current } --env blocked in Bash (a lone } is an argument there)', 'orchestrator', 'Bash', sh('herdr pane split --current } --env A=1'), false);
+t('orchestrator herdr agent read ex-coder } --remote blocked in Bash (a lone } is an argument there)', 'orchestrator', 'Bash', sh('herdr agent read ex-coder } --remote host'), false);
 t('orchestrator herdr agent list } extra blocked', 'orchestrator', 'Bash', sh('herdr agent list } extra'), false);
 t('orchestrator herdr agent get ex-coder } --session blocked', 'orchestrator', 'Bash', sh('herdr agent get ex-coder } --session x'), false);
 t('orchestrator herdr in a scriptblock followed by a comment allowed', 'orchestrator', 'PowerShell', sh('{ herdr agent list } # done'), true);
@@ -1378,16 +1314,6 @@ t('orchestrator herdr agent get with a quoted option-like target blocked', 'orch
 t('orchestrator herdr agent read with a quote inside a target blocked', 'orchestrator', 'PowerShell', sh('herdr agent read "co\'der"'), false);
 t('orchestrator options injected into herdr agent list by a backtick substitution blocked', 'orchestrator', 'Bash', sh('herdr agent list `echo --remote host`'), false);
 t('orchestrator options injected into herdr agent get by a backtick substitution blocked', 'orchestrator', 'Bash', sh('herdr agent get ex-coder `echo --session x`'), false);
-// I1, a variable other than $PWD could hold a double quote or a --env that PowerShell 5.1 re-splits, and the guard can't read its value
-t('orchestrator pane split --cwd with another variable blocked', 'orchestrator', 'PowerShell', sh('$x = \'a" --env A=1 "b\'; herdr pane split --current --cwd $x'), false);
-t('orchestrator pane split --cwd with another variable in double quotes blocked', 'orchestrator', 'PowerShell', sh('$x = \'a" --env A=1 "b\'; herdr pane split --current --cwd "$x"'), false);
-t('orchestrator pane split --cwd with $env:USERPROFILE blocked', 'orchestrator', 'PowerShell', sh('herdr pane split --current --cwd $env:USERPROFILE'), false);
-t('orchestrator pane split --cwd with $env:USERPROFILE in double quotes blocked', 'orchestrator', 'PowerShell', sh('herdr pane split --current --cwd "$env:USERPROFILE"'), false);
-t('orchestrator pane split --cwd with $PWD in lower case allowed', 'orchestrator', 'PowerShell', sh('herdr pane split --current --cwd $pwd'), true);
-t('orchestrator pane split --cwd with "$PWD\\sub dir" allowed', 'orchestrator', 'PowerShell', sh('herdr pane split --current --cwd "$PWD\\sub dir"'), true);
-t('orchestrator pane split --cwd with "${PWD}" allowed', 'orchestrator', 'Bash', sh('herdr pane split --current --cwd "${PWD}" --no-focus'), true);
-t('orchestrator pane split --cwd with $PWDX blocked', 'orchestrator', 'PowerShell', sh('herdr pane split --current --cwd $PWDX'), false);
-t('orchestrator pane split --cwd with "$PWD:x" blocked', 'orchestrator', 'PowerShell', sh('herdr pane split --current --cwd "$PWD:x"'), false);
 // A line break ends a prefix word and its options too (the next line is a command position of its own); found by a scaling fuzz, where a
 // chain of `command -v -c` lines was one match from every line break: 12 s at 64 KB
 t('coder env with a variable, a line break, then claude blocked', 'coder', 'Bash', sh('env FOO=1\nclaude -p hi'), false);
@@ -1574,7 +1500,6 @@ fast('linear: 6,000 herdr calls each ending in an unterminated double quote', 'o
 // v3 Task 4b, E: the orchestrator role's own shell commands, and the workers' usual commands, keep working
 t('role: $env:HERDR_ENV allowed', 'orchestrator', 'PowerShell', sh('$env:HERDR_ENV'), true);
 t('role: Get-Date with a format allowed', 'orchestrator', 'PowerShell', sh("Get-Date -Format 'yyyy-MM-dd HH:mm'"), true);
-t('role: pane split of the angela pane allowed', 'orchestrator', 'PowerShell', sh(String.raw`herdr pane split w1:p3 --direction right --cwd 'C:\example-project' --no-focus`), true);
 t('role: wt-remove with a slug allowed', 'orchestrator', 'PowerShell', sh(`& '${RIG}\\wt-remove.ps1' ex12-sample-copy-task`), true);
 t('role: herdr agent get ex-coder allowed', 'orchestrator', 'Bash', sh('herdr agent get ex-coder'), true);
 t('role: herdr agent prompt ex-coder /clear allowed', 'orchestrator', 'Bash', sh('herdr agent prompt ex-coder "/clear"'), true);
@@ -1893,15 +1818,15 @@ tr('m1 ArtifactCheck is an outside-services block', 'orchestrator', 'ArtifactChe
 tr('m5 docs .gitignore is a rule-files block', 'orchestrator', 'Write', file(DOCS + '\\.gitignore'), 'rule-files');
 
 // Pinned copy of the role commands: 0 blocked on the final guard. Update when a role
-// file changes. The herdr agent start / pane split lines are read from the role file so they stay tied to the guard's LANE_START_RE.
-// So is Jas's background wait under "Talking to lanes", with <lane> filled in.
+// file changes. The lanes.ps1 line is read from the role file (the lean build: lanes.ps1 starts the lanes), and so is Jas's background
+// wait under "Talking to lanes", with <lane> filled in.
 const ROLE_WAIT_LINE = (ROLE_LINES.join('\n').match(/`(herdr agent wait <lane> [^`]+)`/) || [])[1] || 'herdr agent wait: no such line in the role';
 const ROLE_WAIT = ROLE_WAIT_LINE.replace('<lane>', 'ex-coder');
-// pam build: the tab-2 line (herdr tab create) is read from the role too, like the split lines.
-const ROLE_SPLITS = ROLE_LINES.filter((l) => l.startsWith('herdr pane split ') || l.startsWith('herdr tab create ')).map((l) => l.replace(/<[a-z]+-pane>/, 'w1:p2'));
 const ROLE_PLAN_O = [
-  ...ROLE_STARTS.map((l) => ['PowerShell', l.replace(/<[a-z]+-pane>/, 'w1:p2')]),
-  ...ROLE_SPLITS.map((l) => ['PowerShell', l]),
+  ...ROLE_LANES.map((l) => ['PowerShell', l]),
+  // seats build: pane current --current reads the calling pane (rig.ps1 and close.ps1 run it); it stays allowed.
+  ['PowerShell', 'herdr pane current --current'],
+  ['Bash', 'herdr pane current --current'],
   ['Bash', 'herdr tab list'],
   ['PowerShell', 'herdr pane list'],
   ['PowerShell', 'herdr agent get ex-pam'],
@@ -2026,7 +1951,7 @@ for (const r of [`cd ${RIGF}/example/work && npm run x`, 'npm run build', 'npm e
   t(`F1 orchestrator blocks runner: ${r.slice(0, 40)}`, 'orchestrator', 'Bash', sh(r), false);
 t('F1 coder node ./x.js allowed (W6 orchestrator-only)', 'coder', 'Bash', sh('node ./x.js'), true);
 t('F1 checker npm run test allowed', 'checker', 'Bash', sh('npm run test'), true);
-tr('F1 node work/report.cjs is a seat-limits block', 'orchestrator', 'Bash', sh(`node ${RIGp}/example/work/report.cjs`), 'seat-limits', ['six named scripts', 'pms.cjs', 'close.ps1']);
+tr('F1 node work/report.cjs is a seat-limits block', 'orchestrator', 'Bash', sh(`node ${RIGp}/example/work/report.cjs`), 'seat-limits', ['seven named scripts', 'pms.cjs', 'lanes.ps1', 'close.ps1']);
 
 // F2 (W1): unglue strips a quote at a name's edge (glued to a word char on either side), in both real shells. Generated: every single
 // contiguous-substring quote wrap of claude and herdr, at the start and after a separator, blocks for the seat that runs the program.
@@ -2384,45 +2309,14 @@ for (const [opts, cwd, tool, command] of [
   check(`cross-project: ${opts.profile}'s coder (${tool}) \`${command}\` is a worktree-safety block, got ${got.rule}`, got.allow === false && got.rule === 'worktree-safety');
 }
 
-// Lanes: each orchestrator prompts and starts only its own project's lanes; every start command carries -n <lane>. settingsrc build:
-// example's profile says projectSettings false, so its start commands also carry --setting-sources user,local directly after -n <lane>;
-// sample's says true, so its don't.
-const PG_RULES = `${SRIGF}/sample/rules`;
+// Lanes: each orchestrator prompts only its own project's lanes. The lean build: lanes.ps1 starts them, so no orchestrator runs a start
+// command of its own project or of another, and lanes.ps1 takes exactly its own project. settingsrc build: lanes.ps1 puts SOURCES after
+// -n <lane> where the profile says projectSettings false (example), lanes.selftest.ps1 pins it.
 const SOURCES = '--setting-sources user,local';
-const pgStart = (lane, seat, flags) =>
-  `herdr agent start ${lane} --kind claude --pane w1:p2 -- -n ${lane} ${flags} --settings ${PG_RULES}/${seat}.settings.json --append-system-prompt-file ${PG_RULES}/seats/${seat}.md --strict-mcp-config --mcp-config ${PG_RULES}/mcp.json`;
-// example's lane start command as it reads in HC's rig.
-const sRoleStart = (seat, pane) => roleStart(seat, pane).split(RIGF).join(SRIGF);
-const PG_STARTS = [
-  pgStart('sm-coder', 'coder', '--model opus --effort high --permission-mode auto --disallowedTools Agent'),
-  pgStart('sm-angela', 'angela', '--model fable --effort max --permission-mode auto --disallowedTools Edit Write NotebookEdit Agent'),
-  pgStart('sm-oscar', 'oscar', '--model sonnet --effort medium --permission-mode auto --disallowedTools Edit Write NotebookEdit Agent'),
-  pgStart('sm-pam', 'pam', '--model sonnet --effort medium --permission-mode auto --disallowedTools Edit Write NotebookEdit Agent'),
-];
-for (const line of PG_STARTS) {
-  pg(`orchestrator starts ${line.split(' ')[3]}`, 'orchestrator', 'PowerShell', sh(line), true);
-  t(`example orchestrator start of ${line.split(' ')[3]} blocked`, 'orchestrator', 'PowerShell', sh(line), false);
-  pg(`coder start of ${line.split(' ')[3]} blocked`, 'coder', 'PowerShell', sh(line), false);
-}
-for (const lane of ['coder', 'angela', 'oscar']) {
-  pg(`orchestrator start of example's ${lane} blocked`, 'orchestrator', 'PowerShell', sh(sRoleStart(lane, 'w1:p2')), false);
-  t(`example start line for ${lane} without -n (v3) blocked`, 'orchestrator', 'PowerShell', sh(roleStart(lane, 'w1:p2').replace(` -n ex-${lane}`, '')), false);
-  t(`example start line for ${lane} with another -n blocked`, 'orchestrator', 'PowerShell', sh(roleStart(lane, 'w1:p2').replace(` -n ex-${lane}`, ` -n sm-${lane}`)), false);
-}
-// settingsrc build: the flag comes from the profile. An example start without it is refused, and a sample start with it is refused.
-for (const line of PG_STARTS)
-  pg(`orchestrator start of ${line.split(' ')[3]} with ${SOURCES} blocked`, 'orchestrator', 'PowerShell', sh(line.replace(/ -n (sm-[a-z]+) /, ` -n $1 ${SOURCES} `)), false);
-for (const lane of ['coder', 'angela', 'oscar', 'pam'])
-  t(`example start line for ${lane} without ${SOURCES} blocked`, 'orchestrator', 'PowerShell', sh(roleStart(lane, 'w1:p2').replace(` ${SOURCES} `, ' ')), false);
-check(
-  'settingsrc every example lane start pattern holds --setting-sources user,local directly after -n <lane>, and no sample one holds it',
-  loadProfile('example').laneStartRe.length === 4 &&
-    loadProfile('example').laneStartRe.every((re) => / \+-n \+ex-[a-z]+ \+--setting-sources \+user,local \+--model \+/.test(re.source)) &&
-    (attempt(SG.loadProfile, 'sample').laneStartRe || [null]).every((re) => re && !re.source.includes('setting-sources'))
-);
-pg('orchestrator start of sm-coder with -n ex-coder blocked', 'orchestrator', 'PowerShell', sh(PG_STARTS[0].replace('-n sm-coder', '-n ex-coder')), false);
-pg("orchestrator start of sm-coder with example's settings blocked", 'orchestrator', 'PowerShell', sh(PG_STARTS[0].replace(/sample\/rules/g, 'example/rules')), false);
-pg('orchestrator start of sm-angela with the sm-coder flags blocked', 'orchestrator', 'PowerShell', sh(PG_STARTS[0].replace(/sm-coder/g, 'sm-angela')), false);
+pgr('orchestrator herdr agent start of sm-coder is a seat-limits block that names lanes.ps1 sample', 'orchestrator', 'PowerShell', sh('herdr agent start sm-coder --kind claude --pane w1:p2 -- -n sm-coder'), 'seat-limits', [`lanes.ps1 starts the lanes. Run & '${SRIG}\\lanes.ps1' sample`]);
+pg("orchestrator start of example's coder blocked", 'orchestrator', 'PowerShell', sh(roleStart('coder', 'w1:p2')), false);
+pg('orchestrator runs lanes.ps1 sample', 'orchestrator', 'PowerShell', sh(`& '${SRIG}\\lanes.ps1' sample`), true);
+pgr('orchestrator runs lanes.ps1 example: blocked, the reason names its own project', 'orchestrator', 'PowerShell', sh(`& '${SRIG}\\lanes.ps1' example`), 'seat-limits', [`lanes.ps1 takes exactly this project's name, written out plainly: & '${SRIG}\\lanes.ps1' sample`]);
 pg('orchestrator prompts sm-coder with a brief', 'orchestrator', 'Bash', sh(`herdr agent prompt sm-coder "Read ${SRIG}\\sample\\work\\briefs\\sm12-coder.md and do it." --wait --timeout 3600000`), true);
 pg('orchestrator prompts sm-oscar /clear (PowerShell)', 'orchestrator', 'PowerShell', sh('herdr agent prompt sm-oscar "/clear"'), true);
 pg('orchestrator prompts sm-angela', 'orchestrator', 'PowerShell', sh('herdr agent prompt sm-angela "Status?"'), true);
@@ -2433,7 +2327,7 @@ t("example orchestrator prompts sm-coder blocked", 'orchestrator', 'Bash', sh('h
 t('example orchestrator prompts ex-coder (its own lane)', 'orchestrator', 'Bash', sh('herdr agent prompt ex-coder "Status?"'), true);
 pg('orchestrator reads sm-coder', 'orchestrator', 'Bash', sh(`herdr agent read sm-coder --source recent-unwrapped --lines 400 | node ${SRIGF}/report.cjs --ticket SM-12`), true);
 pg('orchestrator gets sm-angela', 'orchestrator', 'PowerShell', sh('herdr agent get sm-angela'), true);
-pg('orchestrator splits a pane in sample', 'orchestrator', 'PowerShell', sh(`herdr pane split --current --direction right --cwd '${SR}' --no-focus`), true);
+pgr('orchestrator pane split in sample blocked: the reason names lanes.ps1 sample', 'orchestrator', 'PowerShell', sh(`herdr pane split --current --direction right --cwd '${SR}' --no-focus`), 'seat-limits', [`lanes.ps1' sample`]);
 pgr('the prompt block names the sm lanes', 'orchestrator', 'Bash', sh('herdr agent prompt ex-coder "Status?"'), 'seat-limits', ['sm-coder, sm-angela, sm-oscar or sm-pam']);
 pgr('SendMessage names the sm lanes', 'orchestrator', 'SendMessage', {}, 'outside-services', ['herdr agent prompt sm-coder, sm-angela, sm-oscar or sm-pam']);
 tr('the example prompt block still names ex-coder, ex-angela, ex-oscar or ex-pam', 'orchestrator', 'Bash', sh('herdr agent prompt sm-coder "Status?"'), 'seat-limits', ['ex-coder, ex-angela, ex-oscar or ex-pam']);
@@ -2486,20 +2380,13 @@ pgr('coder bun add is a seat-limits block', 'coder', 'Bash', sh('bun add lodash'
 for (const c of ['bun --version', 'bun pm ls', 'bun run lint', 'bun audit', 'npm ls'])
   pg(`coder ${c} allowed`, 'coder', 'Bash', sh(c), true, PGAW);
 
-// v4 P5: sample has no role file (the role tie runs on example's, above); its start lines are the pinned PG_STARTS, allowed for the
-// sample orchestrator only.
-for (const line of PG_STARTS) {
-  pg(`role start line for ${line.split(' ')[3]} allowed for its orchestrator`, 'orchestrator', 'PowerShell', sh(line), true);
-  t(`sample role start line for ${line.split(' ')[3]} blocked for the example orchestrator`, 'orchestrator', 'PowerShell', sh(line), false);
-  pg(`role start line for ${line.split(' ')[3]} blocked for its coder`, 'coder', 'PowerShell', sh(line), false, PGAW);
-  pg(`role start line for ${line.split(' ')[3]} blocked for its checkers`, 'checker', 'PowerShell', sh(line), false, PGAW);
-}
-// Pinned copy of sample's orchestrator commands, the counterpart of ROLE_PLAN_O/W/C: 0 blocked. Its split, tab create and background
-// wait lines are example's role lines with sample's root and lane.
+// v4 P5: sample has no role file (the role tie runs on example's, above); its lanes.ps1 line is pinned in PG_PLAN_O.
+// Pinned copy of sample's orchestrator commands, the counterpart of ROLE_PLAN_O/W/C: 0 blocked. Its background wait line is example's
+// role line with sample's lane.
 const PG_ROLE_WAIT = ROLE_WAIT_LINE.replace('<lane>', 'sm-coder');
 const PG_PLAN_O = [
-  ...PG_STARTS.map((l) => ['PowerShell', l]),
-  ...ROLE_SPLITS.map((l) => ['PowerShell', l.split(V).join(SR)]),
+  ['PowerShell', `& '${SRIG}\\lanes.ps1' sample`],
+  ['PowerShell', 'herdr pane current --current'],
   ['Bash', 'node scripts/board.cjs'],
   ['Bash', PG_ROLE_WAIT],
   ['PowerShell', PG_ROLE_WAIT],
@@ -2657,8 +2544,8 @@ tr('pms pam: pms.cjs --live given a .env file is a secrets block', 'pam', 'Bash'
 t('pms orchestrator: pms.cjs given a file in inbox\\ is blocked by the shell rule (the inbox is not nameable)', 'orchestrator', 'Bash', sh(`node ${PMS} --project example comment EX-12 ${RIGF}/example/work/inbox/note.md`), false);
 t("pms example orchestrator: a comment file in sample's work\\ is blocked by the shell rule", 'orchestrator', 'Bash', sh(`node ${PMS} --project example comment EX-12 ${RIGF}/sample/work/x.md`), false);
 tr("pms orchestrator: the rig-path block lists pms.cjs among the nameable rig files", 'orchestrator', 'Bash', sh(`cat ${RIGF}/README.md`), 'rule-files', ['pms.cjs']);
-check("pms the example runPaths hold the rig pms.cjs (no board script; six with the close build's close.ps1)", loadProfile('example').runPaths.includes(`${RIGN}/pms.cjs`) && loadProfile('example').runPaths.length === 6);
-check('pms the sample runPaths hold its rig pms.cjs too (seven with its board script)', (attempt(SG.loadProfile, 'sample').runPaths || []).includes(`${SRIGN}/pms.cjs`) && attempt(SG.loadProfile, 'sample').runPaths.length === 7);
+check("pms the example runPaths hold the rig pms.cjs (no board script; seven with close.ps1 and the lean build's lanes.ps1)", loadProfile('example').runPaths.includes(`${RIGN}/pms.cjs`) && loadProfile('example').runPaths.length === 7);
+check('pms the sample runPaths hold its rig pms.cjs too (eight with its board script)', (attempt(SG.loadProfile, 'sample').runPaths || []).includes(`${SRIGN}/pms.cjs`) && attempt(SG.loadProfile, 'sample').runPaths.length === 8);
 check(
   "pms loadProfile exposes the pms field (each project's own: example's null, sample's an object)",
   loadProfile('example').pms === null && JSON.stringify(attempt(SG.loadProfile, 'sample').pms) === JSON.stringify({ projectId: 'sample-board', envFile: '.env.local' })
@@ -2763,12 +2650,15 @@ pgr('sample orchestrator: pms.cjs --live blocked', 'orchestrator', 'Bash', sh(`n
 // verify-n1 M1: through node, an unquoted { or } shows the brace hint, not the generic --project message.
 tr('orchestrator: node pms.cjs with an unquoted } shows the brace hint', 'orchestrator', 'Bash', sh(PAM(`create Fix} ${PW}d.md`)), 'seat-limits', ['pms.cjs takes no { or } outside quotes']);
 
-// B.3: herdr tab create: only --cwd <its own project root> (required, a plain path), --label <one plain word>, --no-focus, each once.
+// B.3, the seats build: the orchestrator's herdr tab create is refused in every form (the pam build's forms that passed included): rig.ps1
+// opens each space's seats tab, and the refusal names the command Jas runs, in a pane that is not a lane, when it is missing.
 const TAB = (rest) => `herdr tab create ${rest}`;
+const TAB_REFUSED = ['rig.ps1', 'ask Jas to run herdr tab create --workspace <your workspace_id> --cwd', '--label seats --no-focus in a pane that is not a lane'];
 for (const tool of ['Bash', 'PowerShell'])
-  t(`orchestrator tab create of its seats tab allowed (${tool})`, 'orchestrator', tool, sh(TAB("--cwd 'C:\\example-project' --label seats --no-focus")), true);
-t('orchestrator tab create with --cwd only (forward slashes) allowed', 'orchestrator', 'Bash', sh(TAB('--cwd C:/example-project')), true);
-t('orchestrator tab create, options in another order allowed', 'orchestrator', 'PowerShell', sh(TAB("--no-focus --label seats --cwd 'C:\\example-project'")), true);
+  tr(`orchestrator tab create of its seats tab blocked: the refusal names rig.ps1 and Jas's command in its own root (${tool})`, 'orchestrator', tool, sh(TAB("--cwd 'C:\\example-project' --label seats --no-focus")), 'seat-limits', [...TAB_REFUSED, "--cwd 'C:\\example-project' --label"]);
+tr('orchestrator tab create with --cwd only (forward slashes) blocked', 'orchestrator', 'Bash', sh(TAB('--cwd C:/example-project')), 'seat-limits', TAB_REFUSED);
+tr('orchestrator tab create, options in another order blocked', 'orchestrator', 'PowerShell', sh(TAB("--no-focus --label seats --cwd 'C:\\example-project'")), 'seat-limits', TAB_REFUSED);
+tr("orchestrator tab create in Jas's form (--workspace) blocked", 'orchestrator', 'PowerShell', sh(TAB("--workspace w1 --cwd 'C:\\example-project' --label seats --no-focus")), 'seat-limits', TAB_REFUSED);
 for (const [label, rest] of [
   ['without --cwd', '--label seats --no-focus'],
   ['with another folder as --cwd', "--cwd 'C:\\other-folder' --label seats"],
@@ -2784,21 +2674,17 @@ for (const [label, rest] of [
   ['with --cwd twice', "--cwd 'C:\\example-project' --cwd 'C:\\example-project'"],
 ])
   t(`orchestrator tab create ${label} blocked`, 'orchestrator', 'PowerShell', sh(TAB(rest)), false);
-tr('orchestrator tab create with --env is a seat-limits block that names the allowed options', 'orchestrator', 'PowerShell', sh(TAB("--cwd 'C:\\example-project' --env A=1")), 'seat-limits', ['--cwd', '--label', '--no-focus']);
-pg('sample orchestrator tab create in its own root allowed', 'orchestrator', 'PowerShell', sh(TAB(`--cwd '${SR}' --label seats --no-focus`)), true);
+tr("orchestrator tab create with --env is a seat-limits block that names rig.ps1 and Jas's command", 'orchestrator', 'PowerShell', sh(TAB("--cwd 'C:\\example-project' --env A=1")), 'seat-limits', TAB_REFUSED);
+pgr('sample orchestrator tab create in its own root blocked: the refusal names its own root', 'orchestrator', 'PowerShell', sh(TAB(`--cwd '${SR}' --label seats --no-focus`)), 'seat-limits', [...TAB_REFUSED, `--cwd '${SR}' --label`]);
 pg("sample orchestrator tab create in example's root blocked", 'orchestrator', 'PowerShell', sh(TAB("--cwd 'C:\\example-project' --label seats --no-focus")), false);
 for (const seat of ['coder', 'checker', 'pam']) t(`${seat} tab create blocked`, seat, 'PowerShell', sh(TAB("--cwd 'C:\\example-project' --label seats --no-focus")), false);
-// B.3 (and SEAT_FLAGS): pam's lane, sonnet at medium effort with oscar's tools, started and prompted only by its own project's orchestrator.
+// B.3, the lean build: pam's lane starts through lanes.ps1 like every other; an orchestrator's own start of it is refused in every project.
 // rig: the rig folder the start command names (sample's lives in HC's rig).
 const pamStart = (project, lane, pane, rig = project === 'sample' ? SRIGF : RIGF) =>
   `herdr agent start ${lane} --kind claude --pane ${pane} -- -n ${lane} ${project === 'example' ? SOURCES + ' ' : ''}--model sonnet --effort medium --permission-mode auto --disallowedTools Edit Write NotebookEdit Agent ` +
   `--settings ${rig}/${project}/rules/pam.settings.json --append-system-prompt-file ${rig}/${project}/rules/seats/pam.md --strict-mcp-config --mcp-config ${rig}/${project}/rules/mcp.json`;
-t('orchestrator starts pam in a tab-2 pane', 'orchestrator', 'PowerShell', sh(pamStart('example', 'ex-pam', 'w1:p5')), true);
-t('orchestrator start of pam with opus blocked', 'orchestrator', 'PowerShell', sh(pamStart('example', 'ex-pam', 'w1:p5').replace('--model sonnet', '--model opus')), false);
-t("orchestrator start of pam with oscar's settings blocked", 'orchestrator', 'PowerShell', sh(pamStart('example', 'ex-pam', 'w1:p5').replace('pam.settings.json', 'oscar.settings.json')), false);
-t('example orchestrator start of sm-pam blocked', 'orchestrator', 'PowerShell', sh(pamStart('sample', 'sm-pam', 'w1:p5')), false);
-pg('sample orchestrator starts sm-pam', 'orchestrator', 'PowerShell', sh(pamStart('sample', 'sm-pam', 'w1:p5')), true);
-pg("sample orchestrator start of example's pam blocked", 'orchestrator', 'PowerShell', sh(pamStart('example', 'ex-pam', 'w1:p5', SRIGF)), false);
+t('orchestrator start of pam in a tab-2 pane blocked (lanes.ps1 starts it)', 'orchestrator', 'PowerShell', sh(pamStart('example', 'ex-pam', 'w1:p5')), false);
+pg('sample orchestrator start of sm-pam blocked (lanes.ps1 starts it)', 'orchestrator', 'PowerShell', sh(pamStart('sample', 'sm-pam', 'w1:p5')), false);
 for (const seat of ['coder', 'checker', 'pam']) t(`${seat} start of pam blocked`, seat, 'PowerShell', sh(pamStart('example', 'ex-pam', 'w1:p5')), false);
 t('orchestrator prompts pam with a brief', 'orchestrator', 'Bash', sh(`herdr agent prompt ex-pam "Read ${RIG}\\example\\work\\briefs\\pam-20261005-1500.md and do it." --wait --timeout 3600000`), true);
 t('orchestrator reads pam\'s report', 'orchestrator', 'Bash', sh(`herdr agent read ex-pam --source recent-unwrapped --lines 400 | node ${RIGF}/report.cjs --ticket EX-22`), true);
@@ -2868,9 +2754,13 @@ t('coder cd into its worktree allowed (only the orchestrator stays in main)', 'c
 pgr('sample orchestrator cd into its worktree blocked', 'orchestrator', 'PowerShell', sh(`cd ${SR}\\.claude\\worktrees\\sm12-x`), 'seat-limits', ['git -C']);
 
 // Field note 8: a lone --help (and nothing after it) after every herdr subcommand the orchestrator may run.
-for (const sub of ['agent read', 'agent get', 'agent list', 'agent wait', 'agent prompt', 'agent start', 'pane split', 'pane list', 'pane current', 'pane read', 'tab list', 'tab create', 'workspace list'])
+for (const sub of ['agent read', 'agent get', 'agent list', 'agent wait', 'agent prompt', 'pane list', 'pane current', 'pane read', 'tab list', 'workspace list'])
   t(`orchestrator herdr ${sub} --help allowed`, 'orchestrator', 'PowerShell', sh(`herdr ${sub} --help`), true);
-t('orchestrator herdr tab create --help with 2>&1 allowed', 'orchestrator', 'Bash', sh('herdr tab create --help 2>&1'), true);
+// seats build: tab create is no longer one of them, so its --help is refused like tab close --help; the lean build: nor are agent start and
+// pane split, whose --help names lanes.ps1.
+tr('orchestrator herdr tab create --help blocked (seats build)', 'orchestrator', 'PowerShell', sh('herdr tab create --help'), 'seat-limits', ['rig.ps1']);
+tr('orchestrator herdr tab create --help with 2>&1 blocked (seats build)', 'orchestrator', 'Bash', sh('herdr tab create --help 2>&1'), 'seat-limits', ['rig.ps1']);
+for (const sub of ['agent start', 'pane split']) tr(`orchestrator herdr ${sub} --help blocked (the lean build)`, 'orchestrator', 'PowerShell', sh(`herdr ${sub} --help`), 'seat-limits', ['lanes.ps1']);
 for (const c of ['herdr agent start --help --model opus', 'herdr tab create --help --env A=1', 'herdr agent prompt --help coder', 'herdr tab close --help', 'herdr workspace create --help', 'herdr pane run --help'])
   t(`orchestrator ${c} blocked`, 'orchestrator', 'Bash', sh(c), false);
 
@@ -2909,7 +2799,6 @@ for (const [label, command] of [
   ['-Force before the name', CLOSE + '-Force example'],
   ['-force in lower case', CLOSE + 'example -force'],
   ['the name quoted', CLOSE + "'example'"],
-  ['a dot-source', `. '${RIG}\\close.ps1' example`],
   ['the bare path', `${RIG}\\close.ps1 example`],
   ['2>&1 after it', CLOSE + 'example 2>&1'],
 ])
@@ -2924,6 +2813,10 @@ tr('close: the example orchestrator runs close.ps1 sample: blocked, the reason n
 pgr('close: the sample orchestrator runs close.ps1 example: blocked, the reason names the allowed form', 'orchestrator', 'PowerShell', sh(SCLOSE + 'example'), 'seat-limits', [CLOSE_ONLY('sample', SRIG)]);
 for (const rest of ['', '-Force', 'example sample', 'example example', 'example -Quiet', 'example -Force -Force', '-Project example', 'example -Force:$true', 'example $(Get-Date)'])
   tr(`close: the example orchestrator runs close.ps1 ${JSON.stringify(rest)}: blocked`, 'orchestrator', 'PowerShell', sh(CLOSE + rest), 'seat-limits', ['close.ps1 takes exactly']);
+// The lean review (Important 1): a dot-source runs the script in the orchestrator's own shell, so close.ps1 and lanes.ps1 run only with & or
+// by the bare path (both also remove their herdr helper when they end).
+for (const c of [`. '${RIG}\\close.ps1' example`, `if ($true) { . '${RIG}\\close.ps1' example }`])
+  tr(`close: a dot-source of close.ps1 blocked: ${c.slice(0, 20)}`, 'orchestrator', 'PowerShell', sh(c), 'seat-limits', ['never dot-sourced', `& '${RIG}\\close.ps1' example`]);
 t('close: the orchestrator runs a relative .\\close.ps1 from its project root: blocked (it is not the rig file)', 'orchestrator', 'PowerShell', sh('& .\\close.ps1 example'), false);
 for (const other of [`${RIG}\\example\\work\\close.ps1`, `${HOME}\\AppData\\Local\\Temp\\claude\\x\\scratchpad\\close.ps1`, 'C:\\example-project\\close.ps1'])
   t(`close: the orchestrator runs a close.ps1 elsewhere: blocked (${other.slice(20)})`, 'orchestrator', 'PowerShell', sh(`& '${other}' example`), false);
@@ -2938,9 +2831,44 @@ for (const seat of ['coder', 'checker', 'pam']) {
   t(`close: ${seat} with its shell in the rig folder runs .\\close.ps1 example: blocked`, seat, 'PowerShell', sh('& .\\close.ps1 example'), false, { activeWorktree: AW }, RIG);
 }
 pg('close: the sample coder runs close.ps1 sample: blocked', 'coder', 'PowerShell', sh(SCLOSE + 'sample'), false, PGAW);
-// The worker rule names close.ps1 as a whole file name only: auto-close.ps1 or a close.ps1.bak are other files.
-for (const c of ['npx vitest run src/auto-close.ps1.test.ts', 'git log --oneline -- tools/close.ps1.bak'])
-  t(`close: a worker naming another file (${c}) is not the close.ps1 rule`, 'checker', 'Bash', sh(c), true);
+// ===================== the lean build: the orchestrator's <rig>/lanes.ps1 =====================
+// The orchestrator runs lanes.ps1 by its full resolved path (& or the bare path, never dot-sourced) with exactly its own project's name and
+// nothing else; the script, not the orchestrator, holds the herdr agent start and pane split. Workers may not name it.
+const LANES = `& '${RIG}\\lanes.ps1' `;
+const SLANES = `& '${SRIG}\\lanes.ps1' `; // HC's
+for (const tool of ['Bash', 'PowerShell']) {
+  t(`lanes: the example orchestrator runs lanes.ps1 example (${tool})`, 'orchestrator', tool, sh(LANES + 'example'), true);
+  pg(`lanes: the sample orchestrator runs lanes.ps1 sample (${tool})`, 'orchestrator', tool, sh(SLANES + 'sample'), true);
+}
+for (const [label, command] of [
+  ['the name quoted', LANES + "'example'"],
+  ['the bare path', `${RIG}\\lanes.ps1 example`],
+  ['2>&1 after it', LANES + 'example 2>&1'],
+])
+  t(`lanes: the example orchestrator runs lanes.ps1 with ${label}`, 'orchestrator', 'PowerShell', sh(command), true);
+check(
+  'lanes: the example and sample runPaths hold their rig lanes.ps1',
+  loadProfile('example').runPaths.includes(`${RIGN}/lanes.ps1`) && (attempt(SG.loadProfile, 'sample').runPaths || []).includes(`${SRIGN}/lanes.ps1`)
+);
+const LANES_ONLY = (p, rig = RIG) => `lanes.ps1 takes exactly this project's name, written out plainly: & '${rig}\\lanes.ps1' ${p}`;
+tr('lanes: the example orchestrator runs lanes.ps1 sample: blocked, the reason names the allowed form', 'orchestrator', 'PowerShell', sh(LANES + 'sample'), 'seat-limits', [LANES_ONLY('example')]);
+for (const rest of ['', 'example sample', 'example example', 'example -Force', '-Project example', 'example $(Get-Date)'])
+  tr(`lanes: the example orchestrator runs lanes.ps1 ${JSON.stringify(rest)}: blocked`, 'orchestrator', 'PowerShell', sh(LANES + rest), 'seat-limits', ['lanes.ps1 takes exactly']);
+for (const c of [`. '${RIG}\\lanes.ps1' example`, `if ($true) { . '${RIG}\\lanes.ps1' example }`, `git status; . '${RIG}\\lanes.ps1' example`])
+  tr(`lanes: a dot-source of lanes.ps1 blocked: ${c.slice(0, 20)}`, 'orchestrator', 'PowerShell', sh(c), 'seat-limits', ['never dot-sourced', `& '${RIG}\\lanes.ps1' example`]);
+// A dot-source of the worktree scripts stays allowed (they hold no herdr).
+t('lanes: a dot-source of wt-new.ps1 still allowed', 'orchestrator', 'PowerShell', sh(`. '${RIG}\\wt-new.ps1' ex12-x`), true);
+for (const other of [`${RIG}\\example\\work\\lanes.ps1`, 'C:\\example-project\\lanes.ps1'])
+  t(`lanes: the orchestrator runs a lanes.ps1 elsewhere: blocked (${other.slice(20)})`, 'orchestrator', 'PowerShell', sh(`& '${other}' example`), false);
+tr("lanes: Start-Job of lanes.ps1 blocked (its arguments can't be read)", 'orchestrator', 'PowerShell', sh(`Start-Job -FilePath ${RIG}\\lanes.ps1 -ArgumentList example`), 'seat-limits', ['lanes.ps1 takes exactly']);
+tr('lanes: powershell -File lanes.ps1 blocked (a nested powershell; the role runs it from the PowerShell tool)', 'orchestrator', 'Bash', sh(`powershell -File ${RIGF}/lanes.ps1 example`), 'unreadable');
+for (const seat of ['coder', 'checker', 'pam']) {
+  tr(`lanes: ${seat} runs lanes.ps1 example: blocked`, seat, 'PowerShell', sh(LANES + 'example'), 'seat-limits', ['only the orchestrator runs close.ps1 and lanes.ps1']);
+  t(`lanes: ${seat} with its shell in the rig folder runs .\\lanes.ps1 example: blocked`, seat, 'PowerShell', sh('& .\\lanes.ps1 example'), false, { activeWorktree: AW }, RIG);
+}
+// The worker rule names close.ps1 and lanes.ps1 as whole file names only: auto-close.ps1 or a lanes.ps1.bak are other files.
+for (const c of ['npx vitest run src/auto-close.ps1.test.ts', 'git log --oneline -- tools/close.ps1.bak', 'git log --oneline -- tools/lanes.ps1.bak'])
+  t(`close: a worker naming another file (${c}) is not the close.ps1 and lanes.ps1 rule`, 'checker', 'Bash', sh(c), true);
 
 // ===================== the callpath build: EX-21, an alert-only call-path ticket =====================
 // No guard change: src/lib/alerts/ was never core, so the coder edits it in its active worktree, and the core, money, secrets, push and

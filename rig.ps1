@@ -14,7 +14,37 @@ foreach ($f in "$rig\$Project\rules\orchestrator.settings.json", "$rig\$Project\
 }
 # profile.json reader: guard.cjs (loadProfile) is the one validator; keep the find-by-prefix/root and slash-normalising (-replace) lines identical in rig.ps1, wt-new.ps1, wt-remove.ps1, wt.selftest.ps1 and statusline.ps1, and add no rule here.
 $p = Get-Content -LiteralPath $profileFile -Raw | ConvertFrom-Json
+$root = $p.root -replace '/', '\'
+# Invoke-Herdr: one herdr call, its result and what herdr answered (herdr.ps1, shared with lanes.ps1 and close.ps1).
+. "$rig\herdr.ps1"
 if ($env:HERDR_ENV -ne '1') { Write-Warning 'Not inside a herdr pane: the orchestrator will not be able to open lanes. Start herdr first.' }
+else {
+  # The seats build (the rig README, Daily use): name this herdr space after the project and open its seats tab, before Claude starts. A herdr
+  # failure only warns: the steps that need its answer are skipped, and the orchestrator still starts with the same arguments.
+  # This pane's space: --current is the calling pane, never the pane Jas has focused.
+  $r = Invoke-Herdr pane current --current
+  $space = $r.Result.pane.workspace_id
+  if (-not $space) { Write-Warning "herdr pane current --current did not name this pane's space, so the space was not named and no seats tab was opened: $($r.Says)" }
+  else {
+    $r = Invoke-Herdr workspace rename $space $Project
+    if ($r.Ok) { "herdr space $space is named $Project" } else { Write-Warning "herdr workspace rename did not name space $space ${Project}: $($r.Says)" }
+    # tab list lists every space: only a seats tab in this one counts. Without the list no tab opens (a second seats tab would confuse
+    # the orchestrator).
+    $r = Invoke-Herdr tab list
+    $tabs = $r.Result.tabs
+    if ($null -eq $tabs) { Write-Warning "herdr tab list gave no tabs, so no seats tab was opened (one may be open already): $($r.Says)" }
+    else {
+      $seats = @($tabs | Where-Object { $_.workspace_id -ceq $space -and $_.label -ceq 'seats' } | ForEach-Object { $_.tab_id })
+      if ($seats.Count) { "the seats tab of herdr space $space is already open ($($seats -join ', '))" }
+      else {
+        # Without its trailing backslash: Windows PowerShell 5.1 would pass 'C:\x\my root\' as `C:\x\my root" --label ...` (one word).
+        $r = Invoke-Herdr tab create --workspace $space --cwd $root.TrimEnd('\') --label seats --no-focus
+        $tab = $r.Result.tab.tab_id
+        if ($tab) { "opened the seats tab of herdr space $space ($tab)" } else { Write-Warning "herdr tab create did not open the seats tab, or named no tab: $($r.Says)" }
+      }
+    }
+  }
+}
 Set-Location -LiteralPath $p.root
 $lane = $p.lanes.orchestrator
 # projectSettings false: the repo's own .claude/settings.json and its hooks stay out of the session, so GitNexus comes from

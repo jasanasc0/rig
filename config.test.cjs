@@ -17,6 +17,7 @@ const PLUGINS = [
   'customerio@customerio',
   'i-have-adhd@i-have-adhd',
   'watch@claude-video',
+  'supermemory@supermemory-plugins', // lean build: off in the worker seats (its recall hook adds about 1.7 s to each prompt); the orchestrator keeps it (below)
 ];
 const SEATS = {
   orchestrator: { guard: 'orchestrator', off: ['figma@claude-plugins-official', 'watch@claude-video'], on: [], rotation: true, ponytailOff: false },
@@ -69,6 +70,7 @@ for (const project of PROJECTS)
     check(`${tag}: rotation check ${want.rotation ? 'present' : 'absent'}`, commands(hooks, 'UserPromptSubmit').includes(`node ${RIG_DIR}/context-check.cjs --project ${project}`) === want.rotation);
     for (const p of want.off) check(`${tag}: ${p} off`, Boolean(s.enabledPlugins) && s.enabledPlugins[p] === false);
     for (const p of want.on) check(`${tag}: ${p} on`, Boolean(s.enabledPlugins) && s.enabledPlugins[p] === true);
+    if (seat === 'orchestrator') check(`${tag}: supermemory not switched off (the memory lives in this lane)`, (s.enabledPlugins || {})['supermemory@supermemory-plugins'] !== false);
     check(`${tag}: PONYTAIL_DEFAULT_MODE ${want.ponytailOff ? 'off' : 'not set'}`, ((s.env || {}).PONYTAIL_DEFAULT_MODE === 'off') === want.ponytailOff);
     // Field note 7a: GitNexus's MCP server needs more than the default 30 s to answer at start, in every lane.
     check(`${tag}: env MCP_TIMEOUT is "60000"`, (s.env || {}).MCP_TIMEOUT === '60000');
@@ -141,10 +143,10 @@ for (const script of ['wt-new.ps1', 'wt-remove.ps1']) {
 }
 // Runs anywhere: the engine's code holds no machine path. Each script finds the rig as the folder it is in (__dirname, $PSScriptRoot) and
 // the home folder from os.homedir() or $HOME; a path under some C:\Users\<name> in the code would be one machine's.
-const ENGINE_CODE = ['guard.cjs', 'pms.cjs', 'report.cjs', 'refocus.cjs', 'context-check.cjs', 'projects.check.cjs', 'content-gate.cjs', 'rig.ps1', 'close.ps1', 'wt-new.ps1', 'wt-remove.ps1', 'statusline.ps1', 'new-project.ps1'];
+const ENGINE_CODE = ['guard.cjs', 'pms.cjs', 'report.cjs', 'refocus.cjs', 'context-check.cjs', 'projects.check.cjs', 'content-gate.cjs', 'rig.ps1', 'lanes.ps1', 'herdr.ps1', 'close.ps1', 'wt-new.ps1', 'wt-remove.ps1', 'statusline.ps1', 'new-project.ps1'];
 const machinePaths = ENGINE_CODE.filter((f) => !fs.existsSync(path.join(RIG, f)) || /[a-z]:[\\/]+users[\\/]/i.test(fs.readFileSync(path.join(RIG, f), 'utf8')));
 check(`no engine script holds a machine path (C:\\Users\\<name>) or is missing${machinePaths.length ? ' (' + machinePaths.join(', ') + ')' : ''}`, machinePaths.length === 0);
-for (const script of ['rig.ps1', 'close.ps1'])
+for (const script of ['rig.ps1', 'lanes.ps1', 'close.ps1'])
   check(`${script} finds the rig as its own folder ($PSScriptRoot)`, (fs.existsSync(path.join(RIG, script)) ? fs.readFileSync(path.join(RIG, script), 'utf8') : '').includes('$rig = $PSScriptRoot'));
 
 // example's profile, through the guard's validator (loadProfile, the one the scripts rely on): it loads, it names its pam lane (pam build),

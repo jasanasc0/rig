@@ -1,10 +1,10 @@
 'use strict';
 // Run: node <rig>/template.test.cjs   (exit 1 on any miss)
 // Checks example/, the project template new-project.ps1 copies (and the guard tests' fixture): its shared seat section, its one
-// placeholder, its settings hooks and lane start lines against the guard, its FILL IN paragraphs and the content gate's local word list.
+// placeholder, its settings hooks and its lanes.ps1 line against the guard, its FILL IN paragraphs and the content gate's local word list.
 const fs = require('fs');
 const path = require('path');
-const { loadProfile, RIG_DIR } = require('./guard.cjs');
+const { decide, RIG_DIR } = require('./guard.cjs');
 const { loadList, scan } = require('./content-gate.cjs');
 
 const EX = path.join(__dirname, 'example');
@@ -82,20 +82,16 @@ check(
   hookProblems.join('; ')
 );
 
-// 4. The lane start lines, against the guard's own patterns for this profile.
-const P = loadProfile('example');
+// 4. The lanes (the lean build): one lanes.ps1 line, with {{RIG}} as RIG_DIR, that the guard lets example's orchestrator run, and no herdr
+// agent start or pane split line (the guard refuses both for the orchestrator; lanes.ps1 holds the lanes' flags).
 const orch = read(path.join(RULES, 'orchestrator.md'));
-const starts = (orch || '')
-  .split('{{RIG}}')
-  .join(RIG_DIR)
-  .split(/\r?\n/)
-  .filter((l) => l.startsWith('herdr agent start '))
-  .map((l) => l.replace(/<[a-z]+-pane>/, 'w1:p2'));
-const unmatched = starts.filter((l) => !P.laneStartRe.some((re) => re.test(l)));
+const roleLines = (orch || '').split('{{RIG}}').join(RIG_DIR).split(/\r?\n/);
+const lanesLines = roleLines.filter((l) => l.startsWith("& '") && l.includes('lanes.ps1'));
+const lanesVerdict = lanesLines.length === 1 ? decide({ seat: 'orchestrator', tool_name: 'PowerShell', tool_input: { command: lanesLines[0] }, cwd: 'C:\\example-project' }, {}) : null;
 check(
-  "every lane start line in orchestrator.md matches one of loadProfile('example').laneStartRe",
-  starts.length === P.laneStartRe.length && unmatched.length === 0,
-  `${starts.length} start lines; unmatched: ${unmatched.join(' | ') || 'none'}`
+  "orchestrator.md starts the lanes with one lanes.ps1 line the guard lets example's orchestrator run, and holds no herdr agent start or pane split line",
+  lanesLines.length === 1 && lanesLines[0] === `& '${RIG_DIR}/lanes.ps1' example` && lanesVerdict !== null && lanesVerdict.allow === true && !roleLines.some((l) => /^herdr (?:agent start|pane split) /.test(l)),
+  `${lanesLines.length} lanes.ps1 line(s): ${lanesLines.join(' | ') || 'none'}; guard: ${lanesVerdict ? JSON.stringify(lanesVerdict).slice(0, 160) : 'not asked'}`
 );
 
 // 5. The FILL IN paragraphs: each starts a line with "FILL IN: <topic>." (the README's "Adding a project" lists them).

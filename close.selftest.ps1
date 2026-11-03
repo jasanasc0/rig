@@ -1,7 +1,7 @@
 # close.selftest.ps1 - checks close.ps1 against a fake herdr in %TEMP%. The real herdr is never called: Jas's live rigs share its
 # server. Each run of close.ps1 gets a PATH of only the fake, node and Windows, and nothing runs if any other herdr is found on it. The
 # fake answers from a state file (herdr 0.8.2's JSON shapes), records every call and changes the state as herdr would. close.ps1 runs
-# from a temp rig: copies of it and guard.cjs (next to this file), example's profile and a second project, sample, made from it.
+# from a temp rig: copies of it, herdr.ps1 and guard.cjs (next to this file), example's profile and a second project, sample, made from it.
 # Run: powershell -NoProfile -ExecutionPolicy Bypass -File <rig>\close.selftest.ps1   (about a minute: one case waits out the 30 s poll)
 $ps = Join-Path $PSHOME 'powershell.exe'
 $node = (Get-Command node -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
@@ -15,67 +15,6 @@ $isolated = "$fake;$(Split-Path -Parent $node);$env:SystemRoot\System32;$env:Sys
 $script:fails = 0
 function Check($ok, $label) { if ($ok) { "ok   $label" } else { "FAIL $label"; $script:fails++ } }
 
-$fakeHerdr = @'
-'use strict';
-// Fake herdr for close.selftest.ps1: answers from state.json next to it and appends every call to calls.log. An /exit ends the agent
-// (its herdr name goes with it) unless the pane is stubborn; a blocked agent refuses a prompt; a closed tab takes its panes. A command
-// named in state.json's `canned` gets that answer instead: `oops` (not JSON, exit 0) or a herdr error code (exit 1).
-const fs = require('fs');
-const path = require('path');
-const file = path.join(__dirname, 'state.json');
-const s = JSON.parse(fs.readFileSync(file, 'utf8'));
-const a = process.argv.slice(2);
-fs.appendFileSync(path.join(__dirname, 'calls.log'), a.join(' ') + '\n');
-const ok = (result) => process.stdout.write(JSON.stringify({ id: 'cli:fake', result }) + '\n');
-const fail = (code, message) => {
-  process.stderr.write(JSON.stringify({ id: 'cli:fake', error: { code, message } }) + '\n');
-  process.exitCode = 1;
-};
-const save = () => fs.writeFileSync(file, JSON.stringify(s));
-const named = (n) => s.panes.find((p) => p.name === n && p.agent);
-const cmd = a.slice(0, 2).join(' ');
-const canned = (s.canned || {})[a.join(' ')];
-if (canned === 'oops') process.stdout.write('oops\n');
-else if (canned) fail(canned, a.join(' ') + ' failed');
-else if (cmd === 'pane current' && a[2] === '--current' && a.length === 3) {
-  const p = s.panes.find((x) => x.pane_id === s.current);
-  p ? ok({ type: 'pane_current', pane: p }) : fail('pane_not_found', 'no current pane');
-} else if (cmd === 'pane list' && a.length === 2) ok({ type: 'pane_list', panes: s.panes });
-else if (cmd === 'tab list' && a.length === 2) ok({ type: 'tab_list', tabs: s.tabs });
-else if (cmd === 'agent get' && a.length === 3) {
-  const p = named(a[2]);
-  p ? ok({ type: 'agent_info', agent: { ...p } }) : fail('agent_not_found', 'no agent ' + a[2]);
-} else if (cmd === 'agent prompt' && a.length === 4) {
-  const p = named(a[2]);
-  if (!p) fail('agent_not_found', 'no agent ' + a[2]);
-  else if (p.agent_status === 'blocked') fail('agent_blocked', a[2] + ' is blocked');
-  else {
-    if (a[3] === '/exit' && !p.stubborn) Object.assign(p, { agent: null, name: null, agent_status: 'unknown' });
-    save();
-    ok({ type: 'agent_prompted' });
-  }
-} else if (cmd === 'pane close' && a.length === 3) {
-  const i = s.panes.findIndex((p) => p.pane_id === a[2]);
-  if (i < 0) fail('pane_not_found', 'no pane ' + a[2]);
-  else {
-    s.panes.splice(i, 1);
-    save();
-    ok({ type: 'ok' });
-  }
-} else if (cmd === 'tab close' && a.length === 3) {
-  const i = s.tabs.findIndex((t) => t.tab_id === a[2]);
-  if (i < 0) fail('tab_not_found', 'no tab ' + a[2]);
-  else {
-    s.tabs.splice(i, 1);
-    s.panes = s.panes.filter((p) => p.tab_id !== a[2]);
-    save();
-    ok({ type: 'ok' });
-  }
-} else {
-  process.stderr.write('fake herdr: unexpected command: ' + a.join(' ') + '\n');
-  process.exitCode = 2;
-}
-'@
 
 # A pane as herdr's pane list and agent get show it: `name` is the herdr agent name (herdr agent start <lane> sets it; rig.ps1's
 # orchestrator is "claude"), `agent` is null in a pane whose agent has exited.
@@ -100,16 +39,18 @@ function Base {
 function P($state, $id) { $state.panes | Where-Object { $_.pane_id -eq $id } }
 
 # One run of close.ps1 in a child powershell with the isolated PATH: its exit code, output, every herdr call and the state after.
-function Invoke-Close($state, [string[]]$closeArgs, [switch]$NoHerdrEnv) {
+function Invoke-Close($state, [string[]]$closeArgs, [switch]$NoHerdrEnv, [switch]$DotSource) {
   [IO.File]::WriteAllText($stateFile, ($state | ConvertTo-Json -Depth 5 -Compress))
   [IO.File]::WriteAllText($callsFile, '')
   $saved = @{ PATH = $env:PATH; HERDR_ENV = $env:HERDR_ENV }
   $env:PATH = $isolated
   $env:HERDR_ENV = $(if ($NoHerdrEnv) { $null } else { '1' })
   $clock = [Diagnostics.Stopwatch]::StartNew()
-  try { $out = @(& $ps -NoProfile -ExecutionPolicy Bypass -File $closePs1 @closeArgs 2>&1 | ForEach-Object { "$_" }); $code = $LASTEXITCODE }
+  # -DotSource: close.ps1 dot-sourced into the child's own shell (a refusal caught there), which then says whether Invoke-Herdr is still defined.
+  $run = if ($DotSource) { @('-Command', "try { . '$closePs1' $($closeArgs -join ' ') } catch { 'caught: ' + `$_ }; 'leaked: ' + [bool](Get-Command Invoke-Herdr -ErrorAction SilentlyContinue)") } else { @('-File', $closePs1) + $closeArgs }
+  try { $out = @(& $ps -NoProfile -ExecutionPolicy Bypass @run 2>&1 | ForEach-Object { "$_" }); $code = $LASTEXITCODE }
   finally { $env:PATH = $saved.PATH; $env:HERDR_ENV = $saved.HERDR_ENV }
-  $calls = @([IO.File]::ReadAllLines($callsFile) | Where-Object { $_ })
+  $calls = @([IO.File]::ReadAllLines($callsFile) | Where-Object { $_ } | ForEach-Object { $_ -replace "`t", ' ' }) # the fake joins words with tabs
   [pscustomobject]@{
     Code = $code; Out = $out -join "`n"; Seconds = $clock.Elapsed.TotalSeconds; Calls = $calls
     Changes = @($calls | Where-Object { $_ -match '^(?:agent prompt|pane close|tab close) ' }); State = [IO.File]::ReadAllText($stateFile) | ConvertFrom-Json
@@ -127,12 +68,12 @@ $exAll = @('agent prompt ex-coder /exit', 'pane close w1:p2', 'agent prompt ex-a
 
 New-Item -ItemType Directory $fake | Out-Null
 try {
-  [IO.File]::WriteAllText((Join-Path $fake 'fake-herdr.cjs'), $fakeHerdr)
+  Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'fake-herdr.cjs') -Destination $fake # the rig's one fake herdr
   [IO.File]::WriteAllText((Join-Path $fake 'herdr.cmd'), "@`"$node`" `"%~dp0fake-herdr.cjs`" %*`r`n@exit /b %ERRORLEVEL%`r`n")
   # The temp rig: close.ps1 and the guard as they are next to this file, example's profile, and sample's: example's with its name, root,
   # prefix and lanes changed (the guard checks both before close.ps1 reads a lane).
   New-Item -ItemType Directory (Join-Path $rig 'example'), (Join-Path $rig 'sample') | Out-Null
-  foreach ($f in 'close.ps1', 'guard.cjs') { Copy-Item -LiteralPath (Join-Path $PSScriptRoot $f) -Destination $rig -ErrorAction Stop }
+  foreach ($f in 'close.ps1', 'herdr.ps1', 'guard.cjs') { Copy-Item -LiteralPath (Join-Path $PSScriptRoot $f) -Destination $rig -ErrorAction Stop }
   $exProfile = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'example\profile.json'))
   [IO.File]::WriteAllText((Join-Path $rig 'example\profile.json'), $exProfile)
   [IO.File]::WriteAllText((Join-Path $rig 'sample\profile.json'), $exProfile.Replace('"example"', '"sample"').Replace('C:/example-project', 'C:/sample-project').Replace('"ex"', '"sm"').Replace('"ex-', '"sm-'))
@@ -157,6 +98,15 @@ try {
   Check $polled 'example, all idle: each /exit is followed by a pane list (the poll) before its pane closes'
   Check ((@($r.State.panes | Where-Object { $_.workspace_id -eq 'w2' }).Count -eq 3) -and (@($r.State.tabs | Where-Object { $_.workspace_id -eq 'w2' }).Count -eq 2)) "example, all idle: sample's space keeps its 3 panes and 2 tabs"
   Check-Common $r 'example, all idle' 'w2'
+
+  # The lean review (Important 1): dot-sourced, close.ps1 leaves no Invoke-Herdr in the caller's shell, here after a refused close (a working
+  # lane, caught by the caller) and after a whole one, so no later statement of that shell can drive herdr past the guard.
+  $s = Base
+  (P $s 'w1:p4').agent_status = 'working'
+  $r = Invoke-Close $s @('example') -DotSource
+  Check ($r.Out -match 'caught: .*nothing was closed' -and $r.Out -match 'leaked: False') "dot-sourced and refused: no Invoke-Herdr left in the caller ($((($r.Out -split "`n") | Select-Object -Last 1)))"
+  $r = Invoke-Close (Base) @('example') -DotSource
+  Check ($r.Out -match 'leaked: False') "dot-sourced, a whole close: no Invoke-Herdr left in the caller ($((($r.Out -split "`n") | Select-Object -Last 1)))"
 
   # D: a working lane stops the whole close before anything closes; -Force closes it too.
   $s = Base
@@ -289,3 +239,4 @@ try {
 }
 if ($script:fails) { "$($script:fails) check(s) failed"; exit 1 }
 'close selftest: all checks passed'
+exit 0

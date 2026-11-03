@@ -22,21 +22,14 @@ const SEATS = ['orchestrator', 'coder', 'checker', 'pam'];
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'NotebookEdit', 'MultiEdit']);
 // Obsidian CLI subcommands the orchestrator may run: read-only ones only. Workers get none.
 const OBSIDIAN_READ = new Set(['help', 'search', 'search:context', 'backlinks', 'links', 'unresolved', 'orphans', 'deadends', 'properties', 'property:read', 'files', 'tags', 'tasks', 'base:query', 'read']);
-// The herdr groups and subcommands the orchestrator may run (README, Safety rules). `agent prompt` has to name one of its project's lanes
-// and `agent start` has to be one of its project's lane start commands (loadProfile); everything else, and every option in front of the
-// group, is blocked. `tab create` (pam build) opens the second tab for the tab-2 seats, in the orchestrator's own project root only.
-const HERDR_OK = new Map(Object.entries({ agent: ['read', 'get', 'list', 'wait', 'prompt', 'start'], pane: ['split', 'list', 'current', 'read'], workspace: ['list'], tab: ['list', 'create'] }));
-// The flags each worker lane starts with, the same in every project. A project's lane start commands (loadProfile)
-// are these plus its own rules folder: the only `herdr agent start` its orchestrator may run, so every lane starts with its own settings
-// file and therefore its own guard. guard.test.cjs reads each orchestrator role ("Starting lanes") and fails when the two disagree.
-const SEAT_FLAGS = {
-  coder: '--model opus --effort high --permission-mode auto --disallowedTools Agent',
-  angela: '--model fable --effort max --permission-mode auto --disallowedTools Edit Write NotebookEdit Agent',
-  oscar: '--model sonnet --effort medium --permission-mode auto --disallowedTools Edit Write NotebookEdit Agent',
-  pam: '--model sonnet --effort medium --permission-mode auto --disallowedTools Edit Write NotebookEdit Agent', // oscar's flags (pam build)
-};
-const WORKERS = Object.keys(SEAT_FLAGS);
-// A pane id in a lane start command: one token of letters, digits and : . _ - (it never starts with "-", so it can't pass for a flag).
+// The herdr groups and subcommands the orchestrator may run (README, Safety rules). `agent prompt` has to name one of its project's lanes;
+// everything else, and every option in front of the group, is blocked. `tab create` is not on it (seats build): rig.ps1 opens each
+// space's seats tab, and when it is missing Jas runs the command in a pane that is not a lane (tabCreateRefused). Nor are `agent start`
+// and `pane split` (the lean build): lanes.ps1 starts the lanes (lanesRefused).
+const HERDR_OK = new Map(Object.entries({ agent: ['read', 'get', 'list', 'wait', 'prompt'], pane: ['list', 'current', 'read'], workspace: ['list'], tab: ['list'] }));
+// The worker lanes of every project. Their flags live in lanes.ps1, which starts them (the lean build).
+const WORKERS = ['coder', 'angela', 'oscar', 'pam'];
+// A pane id: one token of letters, digits and : . _ - (it never starts with "-", so it can't pass for a flag).
 const PANE_ID = '[A-Za-z0-9][A-Za-z0-9:._-]*';
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -126,7 +119,7 @@ const PROFILE_FIELDS = {
   boardScript: (v) => v === null || (typeof v === 'string' && REL_PATH.test(v)),
   worktreeCopy: (v) => Array.isArray(v) && v.every((f) => typeof f === 'string' && REL_PATH.test(f)),
   nodeModulesJunction: (v) => typeof v === 'boolean',
-  // settingsrc build: false = every rig session of the project starts with --setting-sources user,local (laneStart below, rig.ps1), so the
+  // settingsrc build: false = every rig session of the project starts with --setting-sources user,local (lanes.ps1, rig.ps1), so the
   // repo's own .claude/settings.json, whose hooks would run outside the guard, never loads; Refocus --claude-md prints its CLAUDE.md instead.
   projectSettings: (v) => typeof v === 'boolean',
   // v4 add-on, optional (left out is the same as null): the project's PMS board for <rig>/pms.cjs. projectId goes into the URL path.
@@ -177,20 +170,11 @@ function loadProfile(name) {
     if ((!Object.hasOwn(p, key) && !OPTIONAL_FIELDS.has(key)) || !ok(p[key]) || (key === 'name' && p.name !== name)) throw new Error(`${file}: "${key}" is missing or wrong; it must be ${PROFILE_RULES[key]}`);
   const root = norm(p.root);
   const work = RIG + '/' + name + '/work';
-  const rules = RIG_DIR + '/' + name + '/rules';
   const lower = (list) => list.map((s) => s.toLowerCase());
   const dirs = p.knowledgeDirs.map(escapeRe).join('|');
   const rootRe = spelled(root);
-  // The worker lanes' herdr names and start commands. `-n <lane>` (Claude Code's session name) shows the lane's name on its prompt bar
-  // and lets the status line recognise it. settingsrc build: a profile with projectSettings false adds --setting-sources user,local
-  // directly after it, so the repo's own settings never load in that project's lanes; with true the command is the same as before.
+  // The worker lanes' herdr names (lanes.ps1 starts them).
   const lanes = WORKERS.map((seat) => p.lanes[seat]);
-  const sources = p.projectSettings ? '' : '--setting-sources user,local ';
-  const laneStart = WORKERS.map(
-    (seat) =>
-      `herdr agent start ${p.lanes[seat]} --kind claude --pane <pane> -- -n ${p.lanes[seat]} ${sources}${SEAT_FLAGS[seat]} --settings ${rules}/${seat}.settings.json ` +
-      `--append-system-prompt-file ${rules}/seats/${seat}.md --strict-mcp-config --mcp-config ${rules}/mcp.json`
-  );
   const runPaths = [...(p.boardScript ? [norm(root + '/' + p.boardScript)] : []), ...RIG_SCRIPTS];
   const knowledgeNames = p.knowledgeDirs.map((d) => d + '/').join(' and ');
   const P = {
@@ -215,12 +199,9 @@ function loadProfile(name) {
     ],
     knowledgeNames,
     knowledgeOr: p.knowledgeDirs.join(' or '),
-    // The only lanes its orchestrator may `agent prompt` and `agent start`: its own project's.
+    // The only lanes its orchestrator may `agent prompt`: its own project's.
     lanes,
     laneList: lanes.slice(0, -1).join(', ') + ' or ' + lanes[lanes.length - 1],
-    // One anchored pattern per lane start command: the tokens separated by one or more spaces, any pane id, and nothing before or after
-    // but blanks.
-    laneStartRe: laneStart.map((line) => new RegExp('^\\s*' + line.split(' ').map((tok) => (tok === '<pane>' ? PANE_ID : escapeRe(tok))).join(' +') + '\\s*$')),
     // The ticket name wt-new.ps1 and wt-remove.ps1 take: the project's own prefix, digits, - and a slug (ex12-x). The slug is optional
     // here only because a v3 case runs `wt-remove.ps1 ex1`; the scripts themselves refuse a name without one.
     worktreeName: new RegExp(`^${p.ticketPrefix}\\d+(?:-[a-z0-9][a-z0-9-]*)?$`),
@@ -236,7 +217,7 @@ function loadProfile(name) {
     // W6: the files the orchestrator may run through an interpreter or launcher. Everything else it writes would run outside the guard
     // with Jas's permissions, and it has no other file to run.
     scriptMsg:
-      `the orchestrator runs only its ${runPaths.length === 7 ? 'seven' : 'six'} named scripts (${p.boardScript ? `${name} ${p.boardScript} and ` : ''}the rig pms.cjs, report.cjs, refocus.cjs, wt-new.ps1, wt-remove.ps1, close.ps1); ` +
+      `the orchestrator runs only its ${runPaths.length === 8 ? 'eight' : 'seven'} named scripts (${p.boardScript ? `${name} ${p.boardScript} and ` : ''}the rig pms.cjs, report.cjs, refocus.cjs, wt-new.ps1, wt-remove.ps1, lanes.ps1, close.ps1); ` +
       'a script it writes would run outside the guard with Jas’s permissions. Read files with Read/Grep, write with Write/Edit, or report what you need',
     // pam's one file (pam build): the rig's pms.cjs, for its own project.
     pamScriptMsg: `pam runs only the rig's pms.cjs (node ${RIG_DIR}/pms.cjs --project ${name} <verb> ..., as the brief writes it); any other script would run outside the guard with Jas’s permissions. Report what you need`,
@@ -555,8 +536,8 @@ const RE = {
   herdrWord: /\bherdr\b/i,
   // pms.cjs, the same way: a worker's shell may not name it at all (the whole word, any case; review-pms I2).
   pmsWord: /\bpms\.cjs\b/i,
-  // close.ps1 too (the close build): it closes the lanes' panes through herdr, which no worker may drive.
-  closeWord: /(?<![\w.-])close\.ps1(?![\w.-])/i,
+  // close.ps1 and lanes.ps1 too (the close and lean builds): they close and start the lanes through herdr, which no worker may drive.
+  laneScriptWord: /(?<![\w.-])(?:close|lanes)\.ps1(?![\w.-])/i,
   herdr: new RegExp(CMD_POS + program('herdr'), 'gi'),
   herdrLauncher: headTail(
     new RegExp(CMD_POS_FIRST + String.raw`(?:${LAUNCHER})\b`, 'i'),
@@ -637,8 +618,6 @@ const RE = {
   rigPath: new RegExp(spelled(RIG) + String.raw`\.*(?![\w.-])([^\s"'|;&<>()\x60]*)`, 'gi'),
   // A .. path that reaches a segment named like the rig folder, within one token.
   rigUp: headTail(/(?<![\w.-])\.\.[\\/]/i, new RegExp(String.raw`^(?:[^\s"'|;&]*[\\/])?` + escapeRe(baseName(RIG)) + String.raw`\.*(?![\w.-])`, 'i'), /[\s"'|;&]/),
-  // The flags of `herdr agent start` whose values are rig paths on purpose.
-  herdrFlag: /(--(?:settings|append-system-prompt-file|mcp-config)(?:=|\s+))(?:"[^"\n]*"|'[^'\n]*'|[^\s"';&|]+)/gi,
   // The coder's shell may not name Claude's settings files or the herdr skill either.
   claudeRules: /\.claude[\\/]+settings|\.claude[\\/]+skills[\\/]+herdr/i,
   // W6 (C1), orchestrator only: an interpreter at a command position (its file argument is checked against the profile's runPaths), and a script file
@@ -653,10 +632,11 @@ const RE = {
   orchCd: new RegExp(CMD_POS + String.raw`(?:cd|chdir|pushd|push-location|set-location|sl)(?=[\s;&|)<>\x60]|$)`, 'gi'),
 };
 // W6 (C1): the files the orchestrator may run, as ABSOLUTE normalized paths (W6, wave 2): the project's board script when it has one
-// (its runPaths) and these six rig scripts. A script argument is allowed only when its resolved real path (norm + realOf against the
+// (its runPaths) and these seven rig scripts. A script argument is allowed only when its resolved real path (norm + realOf against the
 // call's cwd) is exactly one of them, whatever its file name or spelling. pms.cjs (v4 add-on) is the orchestrator's one way to its
-// project's PMS board; what it may send is pms.cjs's own business. close.ps1 (the close build) ends its shift.
-const RIG_SCRIPTS = ['pms.cjs', 'report.cjs', 'refocus.cjs', 'wt-new.ps1', 'wt-remove.ps1', 'close.ps1'].map((f) => RIG + '/' + f);
+// project's PMS board; what it may send is pms.cjs's own business. close.ps1 (the close build) ends its shift, and lanes.ps1 (the lean
+// build) starts its lanes.
+const RIG_SCRIPTS = ['pms.cjs', 'report.cjs', 'refocus.cjs', 'wt-new.ps1', 'wt-remove.ps1', 'lanes.ps1', 'close.ps1'].map((f) => RIG + '/' + f);
 const PMS_SCRIPT = RIG + '/pms.cjs';
 const SCRIPT_EXT = /\.(?:ps1|bat|cmd|cjs|mjs|js|py|sh)$/i;
 const NODE_LOAD_OPT = /^(?:-r|--require|--import|--loader|--experimental-loader)(?:=([\s\S]*))?$/;
@@ -859,9 +839,9 @@ const LOOKUP = /(?<![\w.-])command[^\S\n]+-[vV][^\S\n]+[^\s|;&(){}<>\x60'"]+/g;
 
 // The block reasons for a herdr command that is not on the orchestrator's list (P: the project's profile, whose lanes it names).
 const herdrList = (P) =>
-  `The orchestrator may run herdr --help, pane split, pane list, pane current, pane read, agent prompt (to ${P.laneList}, its own project's lanes), ` +
-  "agent read, agent get, agent list, agent wait, workspace list, tab list, tab create (a second tab in its own project's root), and agent start only with the exact commands in the orchestrator role " +
-  '("Starting lanes"), and a lone --help after any of them. Never agent send-keys or pane run; lanes start only with the exact commands in the orchestrator role';
+  `The orchestrator may run herdr --help, pane list, pane current (bare or --current), pane read, agent prompt (to ${P.laneList}, its own project's lanes), ` +
+  'agent read, agent get, agent list, agent wait, workspace list, tab list, and a lone --help after any of them. Never agent send-keys or pane run; ' +
+  'lanes start only through lanes.ps1';
 const notListed = (what, P) => `${what} is not allowed. ${herdrList(P)}`;
 const herdrOpaque = (P) =>
   `the arguments of this herdr command hold something the guard can't read (a $( ) substitution, a backtick, a ( ) or { } group, a quote it can't pair, a quoted string that ends in a backslash, a double quote inside single quotes), and whatever the shell expands there could add options the allow list refuses (--remote, --session, --env); write the arguments out plainly. ${herdrList(P)}`;
@@ -879,6 +859,9 @@ const STATES = /^(?:idle|working|blocked|done|unknown)$/;
 const READ_OPTS = new Map([['--source', /^(?:visible|recent|recent-unwrapped|detection)$/], ['--lines', /^\d+$/], ['--format', /^(?:text|ansi)$/]]);
 const WAIT_OPTS = new Map([['--timeout', /^\d+$/], ['--until', STATES]]);
 const NO_OPTS = new Map();
+// seats build (SE-R2): `pane current --current` names the calling pane and its space (a bare pane current can answer for the pane Jas has
+// focused); --current takes no value (null), so a word after it is a target, which pane current has none of.
+const CURRENT_OPTS = new Map([['--current', null]]);
 const HERDR_ARGS = new Map([
   ['agent read', { pos: 1, opts: READ_OPTS }],
   ['pane read', { pos: 1, opts: READ_OPTS }],
@@ -886,7 +869,7 @@ const HERDR_ARGS = new Map([
   ['agent get', { pos: 1, opts: NO_OPTS }],
   ['agent list', { pos: 0, opts: NO_OPTS }],
   ['pane list', { pos: 0, opts: NO_OPTS }],
-  ['pane current', { pos: 0, opts: NO_OPTS }],
+  ['pane current', { pos: 0, opts: CURRENT_OPTS }],
   ['workspace list', { pos: 0, opts: NO_OPTS }],
   ['tab list', { pos: 0, opts: NO_OPTS }],
 ]);
@@ -900,8 +883,9 @@ function plainDenied(key, words, P) {
   for (let k = 0; k < words.length; k++) {
     const w = words[k];
     const value = spec.opts.get(w);
-    if (value && (!seen.has(w) || w === '--until')) {
+    if (value !== undefined && (!seen.has(w) || w === '--until')) {
       seen.add(w);
+      if (value === null) continue; // a flag with no value (pane current --current)
       const v = words[++k];
       if (v === undefined || !value.test(unquote(v))) return refused(P, key, takes, w, v);
     } else if (targets < spec.pos && TARGET_RE.test(unquote(w))) targets++;
@@ -962,97 +946,39 @@ function promptDenied(words, P) {
   return '';
 }
 
-// `herdr pane split` takes only --current or one pane id, --direction <right|down>, --ratio <number>, --cwd <folder>, --focus and
-// --no-focus, each once. --env would set a variable such as BASH_ENV or PROMPT_COMMAND in the new pane's shell, which could make it run
-// a command before any guard loads; --pane and --right-click are not needed either. A lone --help prints help. herdr itself takes an
-// option's value from the next word, rejects --option=value and abbreviations, and has no -e.
-// The guard reads every value as one word it can see whole (V3-R24): --direction and --ratio bare; --cwd a bare path-like word, the
-// variable $PWD, a single-quoted string or a double-quoted string, and never a value that ends in a backslash or holds a double quote.
-// Why: Windows PowerShell 5.1 hands a native program a value with a blank in it wrapped in double quotes, and escapes neither an inner
-// double quote nor a backslash in front of the closing one. herdr.exe (an MSVC build) reads that backslash and quote as a literal quote,
-// so `--cwd 'C:\a b\' --cwd 'x --env A=1 y'` reaches it as `C:\a b" --cwd x`, `--env`, `A=1`, `y`. With no such value, and no option twice,
-// no later quote can shift and an --env can't hide inside a value. (scanArgs already reads a quote it can't pair, or a quoted string that
-// ends in a backslash or holds a double quote, as unreadable, so those arrive here as a word ending in \0.)
-const SPLIT_TAKES = 'only --current or one pane id, --direction <right|down>, --ratio <number>, --cwd <folder>, --focus and --no-focus, each once';
-const SPLIT_ENV = '--env is refused because a variable such as BASH_ENV or PROMPT_COMMAND could make the new shell run a command before any guard loads';
-// The only variable a --cwd may hold is $PWD (the skill's form): a path can't hold a double quote, whereas any other variable might carry one
-// (or a blank and a --env after it) that the guard can't see and PowerShell 5.1 would re-split.
-const PWD_VAR = String.raw`\$(?:pwd(?![\w:])|\{pwd\})`;
-const CWD_PLAIN = new RegExp(String.raw`^(?:[\w.:~\\/][\w.:~\\/-]*|${PWD_VAR}|'[^'"]*'|"(?:[^"$]|${PWD_VAR})*")$`, 'i');
-const SPLIT_VALUES = new Map([
-  ['--direction', (v) => /^(?:right|down)$/.test(v)],
-  ['--ratio', (v) => /^(?:\d+(?:\.\d+)?|\.\d+)$/.test(v)],
-  ['--cwd', (v) => CWD_PLAIN.test(v) && !/\\['"]?$/.test(v)],
-]);
-function splitDenied(words, P) {
-  const seen = new Set();
-  for (let k = 0; k < words.length; k++) {
-    const w = words[k];
-    const shown = w.replace(/\0/g, '').slice(0, 60);
-    const target = w === '--current' || TARGET_RE.test(w);
-    const check = SPLIT_VALUES.get(w);
-    if (!target && !check && w !== '--focus' && w !== '--no-focus')
-      return w.includes('\0') ? herdrOpaque(P) : `herdr pane split ${shown} is not allowed. pane split takes ${SPLIT_TAKES} (a lone --help is fine). ${SPLIT_ENV}`;
-    const key = target ? 'target' : w;
-    if (seen.has(key)) return `herdr pane split ${shown} is given twice. pane split takes ${SPLIT_TAKES}. A value that Windows PowerShell 5.1 re-splits could hide the second one from this check`;
-    seen.add(key);
-    if (check && !check(words[++k] ?? ''))
-      return (
-        `herdr pane split ${w} needs one plain value: ` +
-        (w === '--cwd'
-          ? 'a bare folder, $PWD (no other variable), or a quoted string, and never one that ends in a backslash or holds a double quote (Windows PowerShell 5.1 gives herdr a value with a blank in it in double quotes, so a trailing backslash or an inner double quote would split the rest of the command line into more herdr options, --env among them)'
-          : w === '--direction'
-            ? 'right or down, written bare'
-            : 'a number, written bare (0.5)')
-      );
-  }
-  return '';
-}
+// `herdr tab create` (seats build): refused in every form. rig.ps1 opens each space's seats tab in its own space; when it is missing, Jas
+// runs the command, in a pane that is not a lane (an orchestrator's tab create without --workspace landed in the space Jas had focused).
+const tabCreateRefused = (P) =>
+  `herdr tab create is not allowed: the seats tab is opened by rig.ps1. If it is missing, ask Jas to run herdr tab create --workspace <your workspace_id> ` +
+  `--cwd '${P.rootDir.replace(/\//g, '\\')}' --label seats --no-focus in a pane that is not a lane (your workspace_id is the one herdr pane current --current names). ${herdrList(P)}`;
 
-// `herdr tab create` (pam build): the second tab, where the tab-2 seats run, opened in the orchestrator's own project root. It takes only
-// --cwd <that root> (required: the same plain values as pane split --cwd, but no variable, and the path has to be the profile's root), --label
-// <one plain word> and --no-focus, each once. --env (a variable such as BASH_ENV could make the new shell run a command before any guard
-// loads), --workspace (a tab in another space), --focus and every other option or word are refused.
-const TAB_TAKES = "only --cwd <this project's root> (required), --label <one plain word> and --no-focus, each once";
-function tabCreateDenied(words, P) {
-  const seen = new Set();
-  for (let k = 0; k < words.length; k++) {
-    const w = words[k];
-    if (w.includes('\0')) return herdrOpaque(P);
-    if (w !== '--cwd' && w !== '--label' && w !== '--no-focus')
-      return `herdr tab create ${w.slice(0, 60)} is not allowed. tab create takes ${TAB_TAKES}; --env, --workspace, --focus and every other option or word are refused. ${SPLIT_ENV}`;
-    if (seen.has(w)) return `herdr tab create ${w} is given twice. tab create takes ${TAB_TAKES}`;
-    seen.add(w);
-    const v = w === '--no-focus' ? '' : words[++k] ?? '';
-    if (w === '--cwd' && !(SPLIT_VALUES.get('--cwd')(v) && !v.includes('$') && norm(unquote(v)) === P.root))
-      return `herdr tab create --cwd takes this project's root written out plainly (${P.rootDir}, quoted or bare; no variable and no other folder). tab create takes ${TAB_TAKES}`;
-    if (w === '--label' && !/^[A-Za-z0-9][\w-]*$/.test(unquote(v))) return `herdr tab create --label takes one plain word (letters, digits, _ and -), like seats. tab create takes ${TAB_TAKES}`;
-  }
-  return seen.has('--cwd') ? '' : `herdr tab create needs --cwd ${P.rootDir}, so the tab opens in this project's root. tab create takes ${TAB_TAKES}`;
-}
+// `herdr agent start` and `herdr pane split` (the lean build): refused in every form, --help included. lanes.ps1 starts every missing lane
+// with its flags, its own project's settings file (and so its guard) and the layout; the orchestrator runs that script, never the herdr
+// commands, so no start command or split value has to be read here.
+const lanesRefused = (P, what) =>
+  `herdr ${what} is not allowed: lanes.ps1 starts the lanes. Run & '${RIG_WIN}\\lanes.ps1' ${P.name} from the PowerShell ` +
+  `tool (timeout 600000): it starts only the missing ones and says why one can't start. ${herdrList(P)}`;
 
 // What is wrong with one herdr command at a command position: the whole block reason, or '' when the orchestrator may run it. `words`
 // are what follows `herdr` (scanArgs). The group and subcommand are compared as written (herdr's own words are lower case). A group
 // alone or with --help prints help and does nothing; a lone --help, -h, --version or -V does too; every other option in front of the
 // group (--session, --remote, ...) is refused, so the group is always the first word. After a listed subcommand only its documented
-// options pass (HERDR_ARGS, the prompt and split rules above), each once.
-function herdrDenied(cmd, words, P) {
+// options pass (HERDR_ARGS and the prompt rules above), each once.
+function herdrDenied(words, P) {
   const [group, sub, ...rest] = words;
   if (group === undefined) return notListed('a bare herdr (it opens the TUI)', P);
   if (group.startsWith('-')) return HERDR_INFO.has(group) && sub === undefined ? '' : notListed(`herdr ${group.replace(/\0/g, '').slice(0, 60)}`, P);
   const subs = HERDR_OK.get(group);
   if (!subs) return notListed(`herdr ${group.replace(/\0/g, '').slice(0, 60)}`, P);
   if (sub === undefined || (HERDR_HELP.has(sub) && rest.length === 0)) return '';
+  if (group === 'tab' && sub === 'create') return tabCreateRefused(P);
+  if ((group === 'agent' && sub === 'start') || (group === 'pane' && sub === 'split')) return lanesRefused(P, `${group} ${sub}`);
   if (!subs.includes(sub)) return notListed(`herdr ${group} ${sub.replace(/\0/g, '').slice(0, 60)}`, P);
   // Field note 8: a lone --help (or -h) after any subcommand on the list prints its help and runs nothing; with any other word it is checked
   // like the subcommand itself.
   if (rest.length === 1 && HERDR_HELP.has(rest[0])) return '';
   const key = group + ' ' + sub;
   if (key === 'agent prompt') return promptDenied(rest, P);
-  // Only the project's own lane start commands (P.laneStartRe), so every lane starts with its own project's settings and guard.
-  if (key === 'agent start') return P.laneStartRe.some((re) => re.test(cmd)) ? '' : notListed('this herdr agent start', P);
-  if (key === 'pane split') return splitDenied(rest, P);
-  if (key === 'tab create') return tabCreateDenied(rest, P);
   return plainDenied(key, rest, P);
 }
 
@@ -1080,7 +1006,7 @@ function checkHerdr(seat, cmd, P) {
     // a blank, ; or & is checked wherever it sits, as before, and when the quotes can't be read (q is null) every match counts.
     if (q && m.index !== 0 && q[m.index] !== 0 && !/[\s;&]/.test(flat[re.lastIndex] ?? ' ')) continue;
     const a = scanArgs(flat, re.lastIndex, flat[m.index] === '`');
-    const denied = herdrDenied(cmd, a.words, P) || (a.opaque ? herdrOpaque(P) : '');
+    const denied = herdrDenied(a.words, P) || (a.opaque ? herdrOpaque(P) : '');
     if (denied) return block('seat-limits', denied);
     re.lastIndex = Math.max(a.end, re.lastIndex);
   }
@@ -1093,7 +1019,7 @@ function checkHerdr(seat, cmd, P) {
 // claude anywhere after the launcher in the segment, and a quoted one counts.
 function checkClaude(cmd, view, q) {
   return outside(RE.claudeCli, view, q) || outside(RE.runnerClaude, view, q) || RE.claudeLauncher.test(view) || RE.claudePackage.test(cmd)
-    ? block('seat-limits', 'a Claude started from a shell loads no rig settings, so it has no guard; workers report, and the orchestrator starts lanes only with the herdr agent start commands in its role')
+    ? block('seat-limits', 'a Claude started from a shell loads no rig settings, so it has no guard; workers report, and the orchestrator starts lanes only with lanes.ps1')
     : null;
 }
 
@@ -1151,7 +1077,7 @@ function worktreeNameDenied(words, P, resumeOk = false) {
 // in the orchestrator's herdr space; it holds the herdr closes the orchestrator itself may not run (pane close, tab close, an /exit prompt).
 // So the orchestrator's call names exactly its own project, written out plainly, plus -Force (once, in any case: PowerShell reads a switch
 // name in any case) when Jas said "close anyway"; words the guard can't all read (`opaque`) could hold another argument, so they refuse too.
-// Only the & (or . or bare-path) run gets here: powershell -File <rig>\close.ps1 stays a nested-powershell block.
+// Only the & (or bare-path) run gets here: a dot-source is refused (dotSourced) and powershell -File <rig>\close.ps1 stays a nested-powershell block.
 const CLOSE_SCRIPT = RIG + '/close.ps1';
 function closeDenied(words, opaque, P) {
   const name = words.filter((w) => !/^-force$/i.test(w));
@@ -1159,6 +1085,22 @@ function closeDenied(words, opaque, P) {
   return (
     `close.ps1 takes exactly this project's name, written out plainly, and -Force only after Jas said "close anyway": ` +
     `& '${RIG_WIN}\\close.ps1' ${P.name} (or ${P.name} -Force), from the PowerShell tool. Another project's lanes belong to its own orchestrator`
+  );
+}
+// lanes.ps1 (the lean build) starts the missing lanes of the project it is given, in the orchestrator's herdr space; it holds the herdr agent
+// start and pane split the orchestrator itself may not run, and the lanes' flags. So the orchestrator's call names exactly its own project,
+// written out plainly; words the guard can't all read (`opaque`) could hold another argument, so they refuse too. As for close.ps1, only the
+// & (or bare-path) run gets here: powershell -File <rig>\lanes.ps1 stays a nested-powershell block.
+const LANES_SCRIPT = RIG + '/lanes.ps1';
+// A dot-source runs a script in the caller's own shell. close.ps1 and lanes.ps1 hold herdr, so the orchestrator runs them only with & or by
+// the bare path, never dot-sourced (lean review, Important 1; both scripts also remove their herdr helper when they end).
+const dotSourced = (name, P) =>
+  `${name} runs with & (or by its bare path), never dot-sourced: a dot-source runs it in your own shell. & '${RIG_WIN}\\${name}' ${P.name}, from the PowerShell tool`;
+function lanesDenied(words, opaque, P) {
+  if (!opaque && words.length === 1 && unquote(words[0]) === P.name) return '';
+  return (
+    `lanes.ps1 takes exactly this project's name, written out plainly: & '${RIG_WIN}\\lanes.ps1' ${P.name}, from the PowerShell tool. ` +
+    "Another project's lanes belong to its own orchestrator"
   );
 }
 // pms.cjs (v4 add-on) picks the PMS board from its own --project, so the orchestrator's pms.cjs call has to hold exactly one plain
@@ -1238,14 +1180,24 @@ function scriptRun(view, q, cwd, P, seat) {
     if (q && m.index !== 0 && q[m.index] !== 0) continue;
     const real = realPath(strip(m[1]));
     if (real === '' || !runPaths.includes(real)) return block('seat-limits', scriptMsg);
-    if (WT_SCRIPTS.includes(real) || real === PMS_SCRIPT || real === CLOSE_SCRIPT) {
+    // A dot-source shows as a lone . among the prefix words in front of the path (PREFIX_ITEM's \.${HS}).
+    if ((real === CLOSE_SCRIPT || real === LANES_SCRIPT) && /(?<![\w.\\/:~$-])\.[^\S\n]/.test(m[0].slice(0, m[0].length - m[1].length)))
+      return block('seat-limits', dotSourced(baseName(real), P));
+    if (WT_SCRIPTS.includes(real) || real === PMS_SCRIPT || real === CLOSE_SCRIPT || real === LANES_SCRIPT) {
       // Its arguments start after the path's closing quote. The search goes on where they end (linear), as for an interpreter's words:
-      // a worktree name that passes is one word (two with wt-new's -Resume), pms.cjs's words are its own arguments, and so are close.ps1's.
+      // a worktree name that passes is one word (two with wt-new's -Resume), pms.cjs's words are its own arguments, and so are close.ps1's
+      // and lanes.ps1's.
       const end = RE.orchScriptAt.lastIndex;
       quiet ??= view.replace(QUIET_REDIRECT, (r) => ' '.repeat(r.length));
       const a = scanArgs(quiet, /["']/.test(view[end] ?? '') ? end + 1 : end);
       const denied =
-        real === PMS_SCRIPT ? pmsProjectDenied(a.words, a.opaque, P, seat) : real === CLOSE_SCRIPT ? closeDenied(a.words, a.opaque, P) : worktreeNameDenied(a.words, P, real === RIG + '/wt-new.ps1');
+        real === PMS_SCRIPT
+          ? pmsProjectDenied(a.words, a.opaque, P, seat)
+          : real === CLOSE_SCRIPT
+            ? closeDenied(a.words, a.opaque, P)
+            : real === LANES_SCRIPT
+              ? lanesDenied(a.words, a.opaque, P)
+              : worktreeNameDenied(a.words, P, real === RIG + '/wt-new.ps1');
       if (denied) return block('seat-limits', denied);
       RE.orchScriptAt.lastIndex = Math.max(a.end, end);
     }
@@ -1257,6 +1209,7 @@ function scriptRun(view, q, cwd, P, seat) {
     if (WT_SCRIPTS.includes(real)) return block('seat-limits', worktreeNameDenied([], P) + " (through Start-Process or Start-Job the guard can't read the name)");
     if (real === PMS_SCRIPT) return block('seat-limits', pmsOnly(P) + " (through Start-Process or Start-Job the guard can't read its arguments)");
     if (real === CLOSE_SCRIPT) return block('seat-limits', closeDenied([], false, P) + " (through Start-Process or Start-Job the guard can't read its arguments)");
+    if (real === LANES_SCRIPT) return block('seat-limits', lanesDenied([], false, P) + " (through Start-Process or Start-Job the guard can't read its arguments)");
   }
   const file = RE.rigScriptFile.exec(view); // powershell -File <rig>\wt-new.ps1 <name>
   if (file) {
@@ -1290,8 +1243,8 @@ function orchestratorCdDenied(view, q, cwd, P) {
 }
 
 // The rig paths the orchestrator's shell may name: its project's working files (work\, but not inbox\ or any .obsidian\) and the
-// scripts pms.cjs, report.cjs, refocus.cjs (it lists the inbox when Jas says "inbox"), wt-new.ps1, wt-remove.ps1 and close.ps1. `rest` is
-// what follows the rig folder in the command's own spelling.
+// scripts pms.cjs, report.cjs, refocus.cjs (it lists the inbox when Jas says "inbox"), wt-new.ps1, wt-remove.ps1, lanes.ps1 and close.ps1.
+// `rest` is what follows the rig folder in the command's own spelling.
 function orchestratorMayName(rest, P) {
   const p = norm(RIG + rest);
   if (RIG_SCRIPTS.includes(p)) return true;
@@ -1304,13 +1257,11 @@ function pamMayName(rest, P) {
   return p === PMS_SCRIPT || p === P.work + '/pms' || p.startsWith(P.work + '/pms/');
 }
 
-// The first rig path the command names that this seat may not, or ''. The orchestrator also gets, in a
-// `herdr agent start` command, the values of --settings, --append-system-prompt-file and --mcp-config.
+// The first rig path the command names that this seat may not, or ''.
 function rigPathMention(seat, cmd, P) {
   const orch = seat === 'orchestrator';
-  const text = orch && /^\s*herdr\s+agent\s+start\b/i.test(cmd) ? cmd.replace(RE.herdrFlag, '$1') : cmd;
-  for (const m of text.matchAll(RE.rigPath)) if (!(orch ? orchestratorMayName(m[1], P) : seat === 'pam' && pamMayName(m[1], P))) return m[0];
-  return RE.rigUp.test(text) ? 'a .. path' : '';
+  for (const m of cmd.matchAll(RE.rigPath)) if (!(orch ? orchestratorMayName(m[1], P) : seat === 'pam' && pamMayName(m[1], P))) return m[0];
+  return RE.rigUp.test(cmd) ? 'a .. path' : '';
 }
 
 function checkShell(seat, cmd, cwd, P) {
@@ -1351,10 +1302,10 @@ function checkShell(seat, cmd, cwd, P) {
   // rig folder (review-pms I2).
   if (seat !== 'orchestrator' && seat !== 'pam' && RE.pmsWord.test(unglue(cmd)))
     return block('seat-limits', "only the orchestrator and pam run pms.cjs (the PMS board script); a worker's shell may not name it. What the board should say goes in your report");
-  // close.ps1 (the close build) closes the lanes' panes through herdr, so no worker's shell may name it either, pam's included: the rig-path
-  // rule alone misses a shell that is already in the rig folder, as for pms.cjs.
-  if (seat !== 'orchestrator' && RE.closeWord.test(unglue(cmd)))
-    return block('seat-limits', "only the orchestrator runs close.ps1 (it ends the shift: it closes the lanes' panes); a worker's shell may not name it");
+  // close.ps1 (the close build) and lanes.ps1 (the lean build) close and start the lanes' panes through herdr, so no worker's shell may name
+  // them either, pam's included: the rig-path rule alone misses a shell that is already in the rig folder, as for pms.cjs.
+  if (seat !== 'orchestrator' && RE.laneScriptWord.test(unglue(cmd)))
+    return block('seat-limits', "only the orchestrator runs close.ps1 and lanes.ps1 (they end the shift and start the lanes, through herdr); a worker's shell may not name them");
   const unglued = unglue(view);
   const claude = checkClaude(cmd, unglued, unglued === view ? q : quoteMap(unglued));
   if (claude) return claude;
@@ -1384,7 +1335,7 @@ function checkShell(seat, cmd, cwd, P) {
       'rule-files',
       `a shell command may not name the rig folder (${rig}); read rig files with the Read tool. Only Jas changes the rules` +
         (seat === 'orchestrator'
-          ? " (the orchestrator's shell may name its work/ files except inbox/, pms.cjs, report.cjs, refocus.cjs, wt-new.ps1, wt-remove.ps1 and close.ps1)"
+          ? " (the orchestrator's shell may name its work/ files except inbox/, pms.cjs, report.cjs, refocus.cjs, wt-new.ps1, wt-remove.ps1, lanes.ps1 and close.ps1)"
           : seat === 'pam'
             ? " (pam's shell may name pms.cjs and its project's work/pms/ files)"
             : '')
