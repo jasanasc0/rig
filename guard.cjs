@@ -431,8 +431,9 @@ const VERB_LEAD = String.raw`(?:["']${PATH_START}[^"'\n|;&(){\x60]{0,260}?[\\/]|
 // one word would rescan each other. (An anchor after `]` did that, quadratically: 7 s at 96 KB.)
 const ASSIGN = String.raw`(?<=^|[\s|;&(){\x60])(?:\[[\w.]+\])?\$\{?[\w:.]+\}?[^\S\n]*[-+*/%]?=[^\S\n]*(?!["'\s])`;
 // (A ) is an anchor for Bash's case, `case $x in y) claude -p hi ;; esac`, and a } of its own for PowerShell, which goes on with the
-// next statement after a block, `if ($x) { a } claude -p hi`.)
-const CMD_START = String.raw`(?:^\s*|[|;&(){\n\x60][^\S\n]*|(?<=^|[\s|;&()\x60])\}[^\S\n]*|${WORD_START}xargs${OPTS}${HS}|\s-(?:exec|execdir|ok|okdir)${HS}|(?<=^|[\s|;&(){\x60])(?:then|do|else|elif|if|while|until)${HS}|${ASSIGN})`;
+// next statement after a block, `if ($x) { a } claude -p hi`.) The & of a redirect (&>, >&, <&) starts no command (the holes build): read
+// as one, a run of `&>x` words made every pattern built on CMD_START rescan from each of them (8,000 took 10 s, past half the budget).
+const CMD_START = String.raw`(?:^\s*|(?:[|;(){\n\x60]|(?<![<>])&(?!>))[^\S\n]*|(?<=^|[\s|;&()\x60])\}[^\S\n]*|${WORD_START}xargs${OPTS}${HS}|\s-(?:exec|execdir|ok|okdir)${HS}|(?<=^|[\s|;&(){\x60])(?:then|do|else|elif|if|while|until)${HS}|${ASSIGN})`;
 const CMD_POS = CMD_START + PREFIX + VERB_LEAD;
 // The same with the fewest prefix words, for a verb that is itself a prefix word (a launcher: the first one found counts).
 const CMD_POS_FIRST = CMD_START + PREFIX_ITEM + '*?' + VERB_LEAD;
@@ -485,9 +486,9 @@ const RE = {
   // A shell given its command as a string: bash/sh/zsh -c, also with other options (-lc, -l -c, --login -c) or as bash.exe, and
   // cmd /c or /k, also behind other switches (/d /c). A start is never inside a longer name or option (-bash), and each option is one
   // word that parses one way, so a long run of options is scanned once per start. PowerShell code built from a string is the same
-  // ([scriptblock]::Create("..."), InvokeCommand.InvokeScript, .NewScriptBlock): checkClaude skips commands inside quotes, so a string
+  // ([scriptblock]::Create("..."), also by its full type name, InvokeCommand.InvokeScript, .NewScriptBlock, .ExpandString): checkClaude skips commands inside quotes, so a string
   // that runs would hide one.
-  wrappers: /\b(?:invoke-expression|iex)\b|-encodedcommand\b|\[scriptblock\]::create\b|\binvokecommand\.(?:invokescript|newscriptblock)\b|processstartinfo|diagnostics\.process\]::start|(?<![\w.-])(?:bash|sh|zsh|dash|ksh)(?:\.exe)?["']?\s+(?:-[\w-]+(?:[=\s]+[^\s-]\S*)?\s+)*-(?=[a-z]*c)[a-z]+\b|(?<![\w.-])cmd(?:\.exe)?["']?\s+(?:\/[a-z](?::\w+)?\s+)*\/[ck]\b/i,
+  wrappers: /\b(?:invoke-expression|iex)\b|-encodedcommand\b|scriptblock\]::create\b|\binvokecommand\.(?:invokescript|newscriptblock|expandstring)\b|processstartinfo|diagnostics\.process\]::start|(?<![\w.-])(?:bash|sh|zsh|dash|ksh)(?:\.exe)?["']?\s+(?:-[\w-]+(?:[=\s]+[^\s-]\S*)?\s+)*-(?=[a-z]*c)[a-z]+\b|(?<![\w.-])cmd(?:\.exe)?["']?\s+(?:\/[a-z](?::\w+)?\s+)*\/[ck]\b/i,
   nestedPowershell: /\b(?:powershell|pwsh)(?:\.exe)?\b/i,
   rigScriptFile: new RegExp(String.raw`^\s*(?:powershell|pwsh)(?:\.exe)?\s+(?:-noprofile\s+)?-file\s+["']?` + RIG_FILE + String.raw`[\\/](?:wt-new|wt-remove)\.ps1["']?(?:\s+([\w-]+))?\s*$`, 'i'),
   rigScript: new RegExp(RIG_FILE + String.raw`[\\/](?:wt-new|wt-remove)\.ps1`, 'i'),
@@ -623,7 +624,8 @@ const RE = {
   claudeRules: /\.claude[\\/]+settings|\.claude[\\/]+skills[\\/]+herdr/i,
   // W6 (C1), orchestrator only: an interpreter at a command position (its file argument is checked against the profile's runPaths), and a script file
   // executed at a command position (bare, after & or a dot-source, after its path). Start-Process/Start-Job targets are handled separately.
-  orchInterp: new RegExp(CMD_POS + String.raw`(?:node|nodejs|python3?|py|bash|sh|zsh|deno|bun|tsx|ts-node|ruby|perl|php)(?:\.exe)?(?=[\s;&|)<>\x60]|$)`, 'gi'),
+  // (The holes build adds Windows Script Host and HTA: cscript, wscript and mshta run a script file too.)
+  orchInterp: new RegExp(CMD_POS + String.raw`(?:node|nodejs|python3?|py|bash|sh|zsh|deno|bun|tsx|ts-node|ruby|perl|php|cscript|wscript|mshta)(?:\.exe)?(?=[\s;&|)<>\x60]|$)`, 'gi'),
   // A script file run at a command position, with its FULL path (CMD_START + PREFIX, not VERB_LEAD, so the directory is captured too: group 1).
   orchScriptAt: new RegExp(CMD_START + PREFIX + String.raw`(["']?(?:[a-zA-Z]:)?[^\s"';|&(){}<>\x60]*\.(?:ps1|bat|cmd|cjs|mjs|js|py|sh))(?=["']|[\s;&|)<>\x60]|$)`, 'gi'),
   orchStartFile: /\b(?:start-process|start-job|saps)\b[\s\S]*?(?:-filepath[=\s]+)?["']?([^\s"';|&]*\.(?:ps1|bat|cmd|cjs|mjs|js|py|sh))\b/i,
@@ -632,25 +634,45 @@ const RE = {
   // Field note 5, orchestrator only: a change of folder at a command position (its target is read by orchestratorCdDenied).
   orchCd: new RegExp(CMD_POS + String.raw`(?:cd|chdir|pushd|push-location|set-location|sl)(?=[\s;&|)<>\x60]|$)`, 'gi'),
   // The holes build (2026-11-03), for the orchestrator and pam, the seats with a script list (hiddenRun): what their shell can't hide from it.
-  // A call operator, & or a dot-source ., whose target is computed: a variable, an expression, an array or a double-quoted string with a $
-  // in it. 2>&1, &> and && are no call operators here (&& and |& are Bash's, read by bashWord); & { } and . { } are blocks whose commands
-  // the other rules read.
-  computedCall: new RegExp(String.raw`(?<![&>|])&(?![&>])[^\S\n]*(?:[$(@]|"[^"\n]*\$)|(?:^|[|;&({\n\x60=])[^\S\n]*\.[^\S\n]*(?:[$(@]|"[^"\n]*\$)`, 'g'),
-  // Bash, not PowerShell (where a $ at a command position starts an expression: $r = ..., $x.Foo()): a command word that is a variable, a
-  // substitution or a quoted variable ($h, ${h}, $(...), "$h", `...`) runs whatever it expands to. A ) starts no command here, unlike in
-  // CMD_START: `echo $(date) $x` hands $x to echo.
-  bashWord: new RegExp(String.raw`(?:^[^\S\n]*|[|;&({\n\x60][^\S\n]*|${WORD_START}xargs${OPTS}${HS}|(?<=^|[\s|;&(){\x60])(?:then|do|else|elif|if|while|until)${HS})${PREFIX}(?:"?\$|\x60)`, 'g'),
+  // A call operator, & or a dot-source ., whose target is computed: a variable, an expression, an array, a double-quoted string with a $
+  // in it, or a word with a $ anywhere (& h$e). A backtick line break may sit between them; |& counts, and } , return and throw start a
+  // dot-source as a separator does. 2>&1, &> and && are no call operators here (&& is Bash's, read by bashWord); & { } and . { } are blocks
+  // whose commands the other rules read; a single-quoted target is literal.
+  computedCall: new RegExp(
+    String.raw`(?<![&>])&(?![&>])(?:[^\S\n]|\x60\n)*(?:[$(@]|"[^"\n]*\$|(?!')[^\s;|&(){}]*\$)|` +
+      String.raw`(?:^|[|;&({\n\x60=},]|(?<![\w-])(?:return|throw)(?=[^\S\n]))(?:[^\S\n]|\x60\n)*\.(?:[^\S\n]|\x60\n)*(?:[$(@]|"[^"\n]*\$|(?!')[^\s;|&(){}]*\$)`,
+    'g'
+  ),
+  // Bash, not PowerShell (where a $ at a command position starts an expression: $r = ..., $x.Foo()): a command word that is or holds a
+  // variable, a substitution or a quoted variable ($h, ${h}, h$e, $(...), "$h", `...`) runs whatever it expands to, also after find's
+  // -exec. A ) starts no command here, unlike in CMD_START: `echo $(date) $x` hands $x to echo (case arms are bashCase's). An = ends the
+  // word, so `f=$(git rev-parse HEAD)` stays an assignment.
+  bashWord: new RegExp(String.raw`(?:^[^\S\n]*|(?:[|;({\n\x60]|(?<![<>])&(?!>))[^\S\n]*|${WORD_START}xargs${OPTS}${HS}|\s-(?:exec|execdir|ok|okdir)${HS}|(?<=^|[\s|;&(){\x60])(?:then|do|else|elif|if|while|until)${HS})${PREFIX}[^\s;|&(){}<>'"\x60=]*(?:"?\$|\x60)`, 'g'),
+  // Bash's case: its arms are commands after a ), which bashWord does not read as a command start.
+  bashCase: /(?:^|[;&|(\n])[^\S\n]*case(?=[^\S\n])/g,
   // Bash . and source run a file in the shell itself, whatever its name (./x.sh and .git are paths, not a dot-source).
-  bashSource: new RegExp(String.raw`(?:^[^\S\n]*|[|;&({\n\x60][^\S\n]*|(?<=^|[\s|;&(){\x60])(?:then|do|else|elif|if|while|until)${HS})${PREFIX}(?:\.|source)(?=[^\S\n]|["'$(]|$)`, 'g'),
-  // Cmdlets that load a script, a module or code into the shell (module-qualified, Microsoft.PowerShell.Core\Import-Module holds the word
-  // powershell, which RE.nestedPowershell refuses first).
-  loader: new RegExp(CMD_POS + String.raw`(?:import-module|ipmo|invoke-command|icm|add-type)(?=[\s;&|)}\x60]|$)`, 'gi'),
-  // A program started through .NET, WMI or COM, which no command-position rule reads (RE.wrappers has ProcessStartInfo and Process]::Start).
-  processApi: /\bdiagnostics\.process\b|\bwin32_process\b|\bshell\.application\b|\bwscript\.shell\b/i,
-  // herdr's caller context, which lanes.ps1 trusts: a $env:HERDR_ assignment (=, +=, ..., ??=), Bash's HERDR_...= (export, a prefix word,
-  // declare), and the env: drive as a path or .NET's SetEnvironmentVariable with a HERDR_ name in the command (herdrVarsChanged).
-  herdrVarSet: /\$\{?env:HERDR_\w*\}?[^\S\n]*(?:[-+*/%]|\?\?)?=(?!=)|(?<![\w$:.\\/-])HERDR_\w*=/i,
-  envDrive: /(?<![$\w{])env:|setenvironmentvariable/i,
+  bashSource: new RegExp(String.raw`(?:^[^\S\n]*|(?:[|;({\n\x60]|(?<![<>])&(?!>))[^\S\n]*|(?<=^|[\s|;&(){\x60])(?:then|do|else|elif|if|while|until)${HS})${PREFIX}(?:\.|source)(?=[^\S\n]|["'$(]|$)`, 'g'),
+  // What loads a script, a module or code into the shell: Import-Module, Invoke-Command and Add-Type at a command position, a using module
+  // or using assembly statement, and a command's .ScriptBlock. (Module-qualified, Microsoft.PowerShell.Core\Import-Module holds the word
+  // powershell, which RE.nestedPowershell refuses first.)
+  loader: new RegExp(CMD_POS + String.raw`(?:import-module|ipmo|invoke-command|icm|add-type)(?=[\s;&|)}\x60]|$)|(?:^|[;\n{])[^\S\n]*using[^\S\n]+(?:module|assembly)\b|\.scriptblock\b`, 'gi'),
+  // An alias renames a program or script: PowerShell's alias cmdlets at a command position (aliasCmd), and the alias: drive ($alias:h = ...,
+  // Set-Item alias:h, in quotes too) and Bash's expand_aliases, without which a script's aliases don't expand (aliasDrive).
+  aliasCmd: new RegExp(CMD_POS + String.raw`(?:set-alias|new-alias|sal|nal|import-alias|ipal|alias)(?=[\s;&|)}\x60]|$)`, 'gi'),
+  aliasDrive: /(?<![\w-])alias:|\bexpand_aliases\b/i,
+  // A program started through .NET, WMI or COM, which no command-position rule reads (RE.wrappers has ProcessStartInfo and Process]::Start):
+  // a new Process object, Win32_Process's Create, Shell.Application and WScript.Shell. Reads stay allowed (Get-CimInstance Win32_Process,
+  // [Diagnostics.Process]::GetCurrentProcess(), a git log -S "Diagnostics.Process").
+  processApi: /\bnew-object\b[^;|\n]*\bdiagnostics\.process\b|\bdiagnostics\.process\]::new\b|\bwin32_process\b[\s\S]*\bcreate\b|\bcreate\b[\s\S]*\bwin32_process\b|\bshell\.application\b|\bwscript\.shell\b/i,
+  // The variables that decide which program, module or preloaded file runs: PATH, PATHEXT, PSModulePath, NODE_OPTIONS. resolveVarSet: a
+  // PowerShell assignment (also in a list, `$env:PATH, $x = ...`, and across a backtick line break), the env: drive, SetEnvironmentVariable.
+  // resolveVarPrefix: Bash's NAME=value (a prefix word, export, declare), outside quotes (`echo "PATH=$PATH"` only prints).
+  resolveVarSet: /\$\{?env:(?:pathext|path|psmodulepath|node_options)\}?(?!\w)(?:[^\S\n]|\x60\n)*(?:,[^=\n;]*)?(?:[-+*/%]|\?\?)?=(?!=)|(?<![$\w{-])env:[\\/]?(?:pathext|path|psmodulepath|node_options)(?!\w)|setenvironmentvariable\s*\(\s*["']?(?:pathext|path|psmodulepath|node_options)\b/i,
+  resolveVarPrefix: /(?<![\w$:.\\/-])(?:pathext|path|psmodulepath|node_options)=/gi,
+  // A file run by its path at a command position, with or without an extension (orchScriptAt reads the script files): a word with a / or \.
+  orchPathAt: new RegExp(CMD_START + PREFIX + String.raw`(["']?[^\s"';|&(){}<>\x60]*[\\/][^\s"';|&(){}<>\x60]*)`, 'gi'),
+  // Launchers start a program the guard can't follow (they run after scriptRun, so a listed script's own reason comes first).
+  launcher: new RegExp(CMD_POS + String.raw`(?:start-process|saps|start-job|sajb|start-threadjob|start|invoke-item|ii|wt|conhost|runas|winpty)(?:\.exe)?(?=[\s;&|)}\x60]|$)`, 'gi'),
 };
 // W6 (C1): the files the orchestrator may run, as ABSOLUTE normalized paths (W6, wave 2): the project's board script when it has one
 // (its runPaths) and these seven rig scripts. A script argument is allowed only when its resolved real path (norm + realOf against the
@@ -824,7 +846,10 @@ function quoteMap(s) {
 // program); index 0 is the start of the command, so a program that is itself quoted there ("claude" -p hi) counts too.
 function outside(re, s, q) {
   re.lastIndex = 0;
-  for (let m; (m = re.exec(s)); ) if (!q || m.index === 0 || q[m.index] === 0) return true;
+  for (let m; (m = re.exec(s)); ) {
+    if (!q || m.index === 0 || q[m.index] === 0) return true;
+    re.lastIndex = m.index + 1; // a match that starts in quotes can run past a real one (`"&"; & $t`): look again one character on (the holes build)
+  }
   return false;
 }
 
@@ -1161,24 +1186,39 @@ function hiddenRun(view, q, tool) {
   if (tool !== 'PowerShell') {
     if (outside(RE.bashSource, view, q))
       return block('unreadable', "Bash . and source run a file in the shell itself, which the guard can't read; run a script by its path, as your role or brief writes it");
+    if (outside(RE.bashCase, view, q))
+      return block('unreadable', "Bash's case runs its arms as commands the guard doesn't read as commands; run them directly, as your role or brief writes it");
     if (outside(RE.bashWord, view, q)) return block('unreadable', HIDDEN_CALL);
   }
   if (outside(RE.computedCall, view, q)) return block('unreadable', HIDDEN_CALL);
+  if (outside(RE.aliasCmd, view, q) || RE.aliasDrive.test(view))
+    return block(
+      'unreadable',
+      "an alias renames a program or script, so the guard can't tell what runs (Set-Alias, New-Alias, Import-Alias, the alias: drive, Bash's alias and expand_aliases); " +
+        'call it by its own name or path, as your role or brief writes it'
+    );
   if (outside(RE.loader, view, q))
-    return block('unreadable', "Import-Module, Invoke-Command and Add-Type load a script, a module or code into the shell, which the guard can't read; run a script by its path, as your role or brief writes it");
+    return block(
+      'unreadable',
+      "Import-Module, using module, Invoke-Command, Add-Type and a command's .ScriptBlock load a script, a module or code into the shell, which the guard can't read; " +
+        'run a script by its path, as your role or brief writes it'
+    );
   if (RE.processApi.test(view))
     return block('unreadable', "a program started through .NET, WMI or COM (System.Diagnostics.Process, Win32_Process, Shell.Application, WScript.Shell) is one the guard can't read; run it directly, as your role or brief writes it");
+  if (RE.resolveVarSet.test(view) || outside(RE.resolveVarPrefix, view, q))
+    return block('seat-limits', 'PATH, PATHEXT, PSModulePath and NODE_OPTIONS decide which program, module or preloaded file runs, so the orchestrator and pam read them but never set one');
   return null;
 }
-// lanes.ps1 finds its pane, tab and space in herdr's caller context (HERDR_PANE_ID, HERDR_TAB_ID, HERDR_WORKSPACE_ID): changed first, its
-// lanes would split another project's panes. The orchestrator reads these, never changes one.
-const herdrVarsChanged = (cmd) => RE.herdrVarSet.test(cmd) || (RE.envDrive.test(cmd) && /HERDR_/i.test(cmd));
-const HERDR_VARS =
-  'herdr sets HERDR_ENV, HERDR_PANE_ID, HERDR_TAB_ID and HERDR_WORKSPACE_ID in each pane it runs, and lanes.ps1 trusts them to know its pane, tab and space; ' +
-  'the orchestrator may read them but never set, change or remove one';
+// A rig .ps1 script comes first in its command (the holes build, round 2): a statement before it in the same call could change what the
+// script calls (an alias, a function such as Join-Path, PATH, herdr's HERDR_ variables, which lanes.ps1 trusts to know its pane, tab and
+// space). Each tool call is a fresh shell, so a change made in an earlier call never reaches it, and one after it runs when it is done.
+const wholeOnly = (name) =>
+  `${name} comes first in its command, with nothing before it (a statement before it could change what the script calls: an alias, a function, PATH or herdr's variables): ` +
+  `& '${RIG_WIN}\\${name}' and its arguments, from the PowerShell tool`;
+const LAUNCHER_MSG = "a launcher starts a program the guard can't follow (Start-Process, start, Start-Job, Invoke-Item, wt, conhost, runas, winpty); run the program directly, as your role or brief writes it";
 
 // W6 (C1) for the two seats that run a rig script: the orchestrator its named scripts (P.runPaths), pam only pms.cjs (pam build, B.1).
-function scriptRun(view, q, cwd, P, seat) {
+function scriptRun(view, q, cwd, P, seat, tool) {
   const runPaths = seat === 'orchestrator' ? P.runPaths : [PMS_SCRIPT];
   const scriptMsg = seat === 'orchestrator' ? P.scriptMsg : P.pamScriptMsg;
   // A script argument is allowed only when its resolved real path (as the edit checks resolve: norm + realOf against cwd) is one of them.
@@ -1196,6 +1236,7 @@ function scriptRun(view, q, cwd, P, seat) {
   for (let m; (m = RE.orchInterp.exec(view)); ) {
     if (!q || m.index === 0 || q[m.index] === 0) {
       const a = scanArgs(view, RE.orchInterp.lastIndex, view[m.index] === '`');
+      let named = false;
       for (let k = 0; k < a.words.length; k++) {
         const w = unquote(a.words[k]).replace(/\0/g, '');
         const lo = NODE_LOAD_OPT.exec(w); // -r/--require/--import/--loader load a file that runs
@@ -1207,6 +1248,9 @@ function scriptRun(view, q, cwd, P, seat) {
           continue;
         }
         if (w.startsWith('-')) continue; // an ordinary option
+        // The holes build: a file word from a variable or an expression (node $f, node "$f", node @args) can't be checked against the list.
+        if (/[$(@\x60]/.test(w)) return block('unreadable', HIDDEN_CALL);
+        named = true;
         if (/[\\/]/.test(w) || SCRIPT_EXT.test(baseName(w))) {
           const real = realPath(w);
           if (real === '' || !runPaths.includes(real)) return block('seat-limits', scriptMsg);
@@ -1216,6 +1260,8 @@ function scriptRun(view, q, cwd, P, seat) {
         }
         break; // a module name or bareword (python -m json.tool) is not a file argument
       }
+      // Words the guard can't read where the file would be (node (Join-Path ...), node $(...)) could name any file.
+      if (!named && a.opaque) return block('unreadable', HIDDEN_CALL);
       RE.orchInterp.lastIndex = Math.max(a.end, RE.orchInterp.lastIndex);
     }
   }
@@ -1247,8 +1293,23 @@ function scriptRun(view, q, cwd, P, seat) {
               ? lanesDenied(a.words, a.opaque, P)
               : worktreeNameDenied(a.words, P, real === RIG + '/wt-new.ps1');
       if (denied) return block('seat-limits', denied);
+      if (real !== PMS_SCRIPT && quiet.slice(0, m.index).trim() !== '') return block('seat-limits', wholeOnly(baseName(real)));
       RE.orchScriptAt.lastIndex = Math.max(a.end, end);
     }
+  }
+  // The holes build: any other file run by its path (no extension, .vbs, .exe, ...) must be one of the listed scripts too.
+  RE.orchPathAt.lastIndex = 0;
+  for (let m; (m = RE.orchPathAt.exec(view)); ) {
+    if (q && m.index !== 0 && q[m.index] !== 0) continue;
+    // A method's or a function's argument list, [IO.File]::ReadAllText('C:\x'), is no command start.
+    if (view[m.index] === '(' && /[\w\])]/.test(view[m.index - 1] ?? '')) continue;
+    // In PowerShell a quoted path runs only after & or a dot-source; on its own it is a string.
+    if (tool === 'PowerShell' && /^["']/.test(m[1]) && !/&|(?<![\w.\\/:~$-])\.(?:[^\S\n]|$)/.test(m[0].slice(0, m[0].length - m[1].length))) continue;
+    const real = realPath(strip(m[1]));
+    // herdr's and the Obsidian CLI's own binaries, by their full path too (W6), are read by their own rules; one where a seat can write
+    // (the orchestrator's folders, the project, the rig) could be anything with that name.
+    if (real && /^(?:herdr|obsidian)(?:\.(?:exe|com|cmd|bat|ps1))?$/.test(baseName(real)) && ![...P.orchWritable, P.root + '/', RIG + '/'].some((w) => isUnder(real, w))) continue;
+    if (real === '' || !runPaths.includes(real)) return block('seat-limits', scriptMsg);
   }
   const sm = RE.orchStartFile.exec(view);
   if (sm) {
@@ -1316,7 +1377,8 @@ function checkShell(seat, cmd, cwd, P, tool) {
   // Windows PowerShell 5.1 ends a statement at a lone CR as well as at a line feed (checked through powershell.exe -Command), so a CR, alone
   // or in a CRLF, is a line break for every rule below, the command-position anchors included (V3-R24). In Bash a CR is an ordinary
   // character, so treating it as a line break only adds blocks.
-  cmd = cmd.replace(/\r\n?/g, '\n');
+  // PowerShell also reads U+0085 (NEL) as a blank, which JavaScript's \s does not (the holes build).
+  cmd = cmd.replace(/\r\n?/g, '\n').replace(/\u0085/g, ' ');
   if (RE.wrappers.test(cmd)) return block('unreadable', 'wrapped or encoded commands cannot be checked; run the command directly');
   if (RE.inlineCode.test(cmd))
     return block('unreadable', "inline interpreter code can't be checked; the coder: a file in its worktree; every other seat: use Read, Grep, Write and Edit, or report what you need");
@@ -1365,9 +1427,9 @@ function checkShell(seat, cmd, cwd, P, tool) {
     const uq = unglued === view ? q : quoteMap(unglued);
     const hidden = hiddenRun(unglued, uq, tool);
     if (hidden) return hidden;
-    if (seat === 'orchestrator' && herdrVarsChanged(cmd)) return block('seat-limits', HERDR_VARS);
-    const ran = scriptRun(unglued, uq, cwd, P, seat) || (seat === 'orchestrator' ? orchestratorCdDenied(unglued, uq, cwd, P) : null);
+    const ran = scriptRun(unglued, uq, cwd, P, seat, tool) || (seat === 'orchestrator' ? orchestratorCdDenied(unglued, uq, cwd, P) : null);
     if (ran) return ran;
+    if (outside(RE.launcher, unglued, uq)) return block('unreadable', LAUNCHER_MSG);
   }
   if ((cmd.match(RE.envFile) || []).some((m) => m.toLowerCase() !== '.env.example'))
     return block('secrets', 'shell commands may not name .env files (search code with the Grep tool instead)');

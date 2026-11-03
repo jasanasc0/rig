@@ -387,7 +387,8 @@ t('orchestrator full-path Obsidian.com eval blocked', 'orchestrator', 'PowerShel
 t('orchestrator obsidian after a pipe checked', 'orchestrator', 'Bash', sh('echo x | obsidian vault=docs append file=y'), false);
 t('coder obsidian search blocked', 'coder', 'Bash', sh('obsidian vault=docs search query=payments'), false);
 t('checker grep for the word obsidian allowed', 'checker', 'Bash', sh('grep -rn "obsidian" src'), true);
-t('opening an obsidian:// link is not a CLI call', 'orchestrator', 'PowerShell', sh('Start-Process obsidian://open?vault=docs'), true);
+// (As the coder: the orchestrator refuses every launcher since the holes build, and the coder may run no Obsidian CLI at all.)
+t('opening an obsidian:// link is not a CLI call', 'coder', 'PowerShell', sh('Start-Process obsidian://open?vault=docs'), true);
 
 // v3 fix round 1 (Task 2 review), I1: a command that starts with whitespace is still at a command position
 t('orchestrator obsidian eval after a leading space blocked', 'orchestrator', 'Bash', sh(' obsidian vault=docs eval code=1'), false);
@@ -1180,8 +1181,9 @@ t('checker command -v node allowed', 'checker', 'Bash', sh('command -v node'), t
 t('checker cat CLAUDE.md allowed', 'checker', 'Bash', sh('cat CLAUDE.md'), true);
 t('checker ls of the .claude folder in the home folder allowed', 'checker', 'Bash', sh('ls ~/.claude/projects'), true);
 t('checker npm ls of another @anthropic-ai package allowed', 'checker', 'Bash', sh('npm ls @anthropic-ai/sdk'), true);
-t('orchestrator Start-Process of a note in .claude allowed', 'orchestrator', 'PowerShell', sh(String.raw`Start-Process notepad C:\Users\dev\.claude\CLAUDE.md`), true);
-t('orchestrator Start-Process of the claude.ai site allowed', 'orchestrator', 'PowerShell', sh('Start-Process https://claude.ai'), true);
+// (The orchestrator and pam refuse every launcher since the holes build; these two pin the claude rule's reading, so they run as the coder.)
+t('coder Start-Process of a note in .claude allowed', 'coder', 'PowerShell', sh(String.raw`Start-Process notepad C:\Users\dev\.claude\CLAUDE.md`), true);
+t('coder Start-Process of the claude.ai site allowed', 'coder', 'PowerShell', sh('Start-Process https://claude.ai'), true);
 t('checker grep -i claude on a git log allowed', 'checker', 'Bash', sh('git log -1 --format=%B | grep -i claude'), true);
 tr('a Claude CLI is a seat-limits block', 'coder', 'Bash', sh('claude --version'), 'seat-limits');
 tr('the claude-code package is a seat-limits block', 'checker', 'Bash', sh('npx @anthropic-ai/claude-code -p hi'), 'seat-limits');
@@ -1604,6 +1606,9 @@ fast('linear: 5,000 herdr commands in a row', 'orchestrator', 'Bash', 'herdr age
 fast('linear: 20,000 x=1 prefixes for the orchestrator (holes build)', 'orchestrator', 'Bash', 'x=1 '.repeat(20000) + 'echo hi');
 fast('linear: 20,000 ". " prefixes for pam (holes build)', 'pam', 'Bash', '. '.repeat(20000) + 'x');
 fast('linear: 20,000 & in a row for the orchestrator (holes build)', 'orchestrator', 'PowerShell', '& '.repeat(20000) + 'x');
+// The & of a redirect starts no command (holes build, round 2): 8,000 `&>x` words took about 10 s for every seat before.
+fast('linear: 8,000 &>x redirects for the orchestrator', 'orchestrator', 'Bash', '&>x '.repeat(8000) + 'y');
+fast('linear: 8,000 &>x redirects for the coder', 'coder', 'Bash', '&>x '.repeat(8000) + 'y');
 fast('linear: 12,000 claude commands in a row', 'coder', 'Bash', 'claude; '.repeat(12000));
 fast('linear: 16,000 herdr words in one segment', 'orchestrator', 'Bash', 'herdr '.repeat(16000));
 fast('linear: 7,000 Start-Process words then claude', 'checker', 'PowerShell', 'Start-Process '.repeat(7000) + 'claude');
@@ -2924,19 +2929,93 @@ tr("holes: the orchestrator's Bash source of lanes.ps1 blocked", 'orchestrator',
 for (const seat of ['orchestrator', 'pam'])
   for (const c of ['source C:/tmp/x', 'source C:/tmp/x.sh', '. C:/tmp/x', '. ./x', 'source ~/.bashrc', 'true && . C:/tmp/x', 'if true; then source x; fi', '. "$f"', 'source $f'])
     tr(`holes: ${seat}'s Bash ${c} blocked`, seat, 'Bash', sh(c), 'unreadable', SOURCED);
-// A program started through .NET, WMI or COM.
+// A program started through .NET, WMI or COM (payloads no other rule catches, so each case pins processApi itself).
 const LAUNCHED = ['through .NET, WMI or COM'];
 tr("holes: the orchestrator's System.Diagnostics.Process start of herdr blocked", 'orchestrator', 'PowerShell', sh("$p = New-Object System.Diagnostics.Process; $p.StartInfo.FileName = 'herdr.exe'; $p.StartInfo.Arguments = 'pane split --current'; $p.Start()"), 'unreadable', LAUNCHED);
 for (const seat of ['orchestrator', 'pam'])
-  for (const c of ["$p = [System.Diagnostics.Process]::new(); $p.StartInfo.FileName = 'node'; $p.Start()", "Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList 'node C:\\tmp\\x.cjs'", "Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = 'node C:\\tmp\\x.cjs' }", "(New-Object -ComObject Shell.Application).ShellExecute('node', 'C:\\tmp\\x.cjs')", "(New-Object -ComObject WScript.Shell).Exec('node C:\\tmp\\x.cjs')", "([wmiclass]'Win32_Process').Create('node C:\\tmp\\x.cjs')"])
-    t(`holes: ${seat}'s ${c.slice(0, 50)} blocked`, seat, 'PowerShell', sh(c), false);
-// herdr's caller context: lanes.ps1 trusts HERDR_PANE_ID, HERDR_TAB_ID and HERDR_WORKSPACE_ID, so the orchestrator reads them, never changes them.
-const HERDR_VARS = ['may read them but never'];
-for (const c of [`$env:HERDR_PANE_ID = 'w2:p1'; & '${RL}' example`, "$env:HERDR_TAB_ID='w2:t1'", '${env:HERDR_WORKSPACE_ID} = "w2"', "$env:HERDR_PANE_ID += 'x'", '$env:HERDR_ENV = $null', 'Set-Item env:HERDR_PANE_ID w2:p1', 'Set-Item -Path "Env:\\HERDR_WORKSPACE_ID" -Value w2', 'Remove-Item Env:\\HERDR_ENV', 'Rename-Item env:FOO -NewName HERDR_PANE_ID', "[Environment]::SetEnvironmentVariable('HERDR_PANE_ID', 'w2:p1')", '[System.Environment]::SetEnvironmentVariable("HERDR_TAB_ID", "w2:t1", "Process")'])
-  tr(`holes: the orchestrator's PowerShell ${c.slice(0, 50)} blocked`, 'orchestrator', 'PowerShell', sh(c), 'seat-limits', HERDR_VARS);
-for (const c of ['export HERDR_PANE_ID=w2:p1', 'HERDR_TAB_ID=w2:t1 herdr agent list', 'declare -x HERDR_WORKSPACE_ID=w2'])
-  tr(`holes: the orchestrator's Bash ${c} blocked`, 'orchestrator', 'Bash', sh(c), 'seat-limits', HERDR_VARS);
-pgr('holes: the sample orchestrator setting HERDR_WORKSPACE_ID blocked', 'orchestrator', 'PowerShell', sh(`$env:HERDR_WORKSPACE_ID = 'w1'; ${SLANES}sample`), 'seat-limits', HERDR_VARS);
+  for (const c of ["$p = New-Object -TypeName System.Diagnostics.Process; $p.StartInfo.FileName = 'notepad'; $p.Start()", "$p = [System.Diagnostics.Process]::new(); $p.StartInfo.FileName = 'notepad'; $p.Start()", 'Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList notepad.exe', "Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = 'notepad.exe' }", "([wmiclass]'Win32_Process').Create('notepad.exe')", "(New-Object -ComObject Shell.Application).ShellExecute('notepad.exe')", "(New-Object -ComObject WScript.Shell).Run('notepad.exe')"])
+    tr(`holes: ${seat}'s ${c.slice(0, 50)} blocked`, seat, 'PowerShell', sh(c), 'unreadable', LAUNCHED);
+// ----- round 2 (the review of round 1, 2026-11-03): more spellings of the same classes -----
+// An alias renames a program or script.
+const ALIASED = ['an alias renames a program or script'];
+for (const c of ['Set-Alias h herdr; h agent start ex-coder --kind claude --pane w1:p2', `Set-Alias l '${RL}'; l sample`, 'New-Alias h herdr', 'sal h herdr; h tab list', 'Set-Item alias:h herdr; h pane split --current', "${alias:h} = 'herdr'", "$alias:h = 'herdr'", 'New-Item -Path "alias:h" -Value herdr'])
+  tr(`holes r2: the orchestrator's PowerShell ${c.slice(0, 50)} blocked`, 'orchestrator', 'PowerShell', sh(c), 'unreadable', ALIASED);
+for (const c of ['Set-Alias n node; n C:\\tmp\\x.cjs', 'nal x node', 'Import-Alias C:\\tmp\\a.csv', 'ipal C:\\tmp\\a.csv'])
+  tr(`holes r2: pam's PowerShell ${c} blocked`, 'pam', 'PowerShell', sh(c), 'unreadable', ALIASED);
+for (const c of ['shopt -s expand_aliases; alias h=herdr; h pane split --current', 'alias n=node'])
+  tr(`holes r2: the orchestrator's Bash ${c.slice(0, 40)} blocked`, 'orchestrator', 'Bash', sh(c), 'unreadable', ALIASED);
+// An interpreter's file argument that is computed.
+for (const seat of ['orchestrator', 'pam']) {
+  for (const c of ["$f = 'C:\\tmp\\x.cjs'; node $f", "node (Join-Path 'C:\\tmp' 'x.cjs')", 'python $f', 'node @args'])
+    tr(`holes r2: ${seat}'s PowerShell ${c} blocked`, seat, 'PowerShell', sh(c), 'unreadable', HIDDEN);
+  for (const c of ['f=x; node "$f"', 'node $(echo /tmp/x.cjs)', 'node `echo /tmp/x.cjs`'])
+    tr(`holes r2: ${seat}'s Bash ${c} blocked`, seat, 'Bash', sh(c), 'unreadable', HIDDEN);
+}
+// PATH, PATHEXT, PSModulePath and NODE_OPTIONS decide which program, module or preloaded file runs.
+const RESOLVED = ['decide which program, module or preloaded file runs'];
+for (const seat of ['orchestrator', 'pam']) {
+  for (const c of [`$env:NODE_OPTIONS = '--require C:\\tmp\\x.cjs'; node ${RIGF}/pms.cjs --project example board`, "$env:PATH = 'C:\\tmp;' + $env:PATH; git status", "$env:Path += ';C:\\tmp'", "${env:PATHEXT} = '.X'", "$env:PSModulePath = 'C:\\tmp'", "$env:PATH, $x = 'C:\\tmp', 1", 'Set-Item env:PATH C:\\tmp', 'Set-Item -Path "Env:\\Path" -Value C:\\tmp', "[Environment]::SetEnvironmentVariable('PATH', 'C:\\tmp')"])
+    tr(`holes r2: ${seat}'s PowerShell ${c.slice(0, 50)} blocked`, seat, 'PowerShell', sh(c), 'seat-limits', RESOLVED);
+  for (const c of ['PATH=/tmp:$PATH git status', 'export PATH=/tmp:$PATH', `NODE_OPTIONS='--require /tmp/x.cjs' node ${RIGF}/pms.cjs --project example board`, 'export NODE_OPTIONS=--require=/tmp/x.cjs', 'declare -x PATH=/tmp'])
+    tr(`holes r2: ${seat}'s Bash ${c.slice(0, 50)} blocked`, seat, 'Bash', sh(c), 'seat-limits', RESOLVED);
+}
+// A rig .ps1 script comes first in its command: a statement before it could change what it calls (an alias, a function, PATH, herdr's variables).
+// This replaces round 1's HERDR_ variable rule: each tool call is a fresh shell, so a variable set alone changes nothing.
+const ALONE = ['comes first in its command'];
+for (const c of [`function Join-Path { 'x' }; & '${RL}' example`, `$env:HERDR_PANE_ID = 'w2:p1'; & '${RL}' example`, `$env:HERDR_PANE_ID, $x = 'w2:p1', 1; & '${RL}' example`, `Get-Date; & '${RC}' example`, `function git { 'x' }; & '${RIG}\\wt-new.ps1' ex12-x`, `$x = 1; & '${RIG}\\wt-remove.ps1' ex12-x`, `$null = & '${RL}' example`])
+  tr(`holes r2: ${c.slice(0, 60)} blocked (first in its command)`, 'orchestrator', 'PowerShell', sh(c), 'seat-limits', ALONE);
+pgr('holes r2: the sample orchestrator setting HERDR_WORKSPACE_ID before lanes.ps1 blocked', 'orchestrator', 'PowerShell', sh(`$env:HERDR_WORKSPACE_ID = 'w1'; ${SLANES}sample`), 'seat-limits', ALONE);
+for (const c of [`& '${RL}' example 2>&1`, `& '${RL}' example *>&1`, `  & '${RL}' example  `, `& '${RC}' example -Force`, `. '${RIG}\\wt-new.ps1' ex12-x`, `& '${RL}' example; herdr agent list`, `& '${RC}' example -Force; Get-Date`])
+  t(`holes r2: ${c.slice(0, 60)} still allowed (first in its command)`, 'orchestrator', 'PowerShell', sh(c), true);
+// Spellings of a computed call that round 1 missed: a backtick line break after & or ., |&, } and return before ., a $ inside the target
+// word, and a match that starts in quotes hiding a real one after it (outside() resumes one character on).
+const BT = String.fromCharCode(96);
+for (const c of [`& ${BT}\n$t sample`, `.${BT}\n $t`, 'Get-Date |& $t sample', 'if (1) {} . $t sample', 'return . $t', "$e='erdr'; & h$e agent start ex-coder --kind claude --pane w1:p2", '& h"$e" pane split --current', '"&"; & $t sample', "'.'; . $t"])
+  tr(`holes r2: the orchestrator's PowerShell ${JSON.stringify(c).slice(0, 50)} blocked`, 'orchestrator', 'PowerShell', sh(c), 'unreadable', HIDDEN);
+for (const c of ['e=erdr; h$e pane split --current', 'find . -exec $h pane split \\;'])
+  tr(`holes r2: the orchestrator's Bash ${c} blocked`, 'orchestrator', 'Bash', sh(c), 'unreadable', HIDDEN);
+tr("holes r2: the orchestrator's Bash case blocked", 'orchestrator', 'Bash', sh('case a in a) $h pane split --current;; esac'), 'unreadable', ["Bash's case"]);
+t('holes r2: a U+0085 before herdr is read as a blank, so the herdr rule sees the call', 'orchestrator', 'PowerShell', sh('Get-Date;\u0085herdr pane split --current'), false);
+// More loaders, and string-to-code forms RE.wrappers now reads for every seat.
+for (const seat of ['orchestrator', 'pam'])
+  for (const c of ["using module 'C:\\tmp\\x.psm1'", 'using assembly C:\\tmp\\x.dll', "(Get-Command 'C:\\tmp\\x.ps1').ScriptBlock.Invoke()", 'Get-Date; using module x'])
+    tr(`holes r2: ${seat}'s ${c.slice(0, 50)} blocked`, seat, 'PowerShell', sh(c), 'unreadable', LOADED);
+for (const seat of ['orchestrator', 'pam', 'coder'])
+  for (const c of ["[Management.Automation.ScriptBlock]::Create('x')", "[System.Management.Automation.ScriptBlock]::Create('x').Invoke()", "$ExecutionContext.InvokeCommand.ExpandString('$(Get-Date)')"])
+    tr(`holes r2: ${seat}'s ${c.slice(0, 50)} blocked`, seat, 'PowerShell', sh(c), 'unreadable', ['wrapped or encoded commands']);
+// A file run by its path, whatever its extension, and the script hosts: only the listed scripts.
+for (const c of ["& 'C:\\tmp\\x'", "& 'C:\\tmp\\x.vbs'", 'C:\\tmp\\x.exe', '.\\x', 'cscript C:\\tmp\\x.js', 'wscript C:\\tmp\\x.vbs', 'mshta C:\\tmp\\x.hta'])
+  tr(`holes r2: the orchestrator's PowerShell ${c} blocked (not a listed script)`, 'orchestrator', 'PowerShell', sh(c), 'seat-limits', ['named scripts']);
+for (const c of ['./x', '/tmp/x', '~/x.bin'])
+  tr(`holes r2: the orchestrator's Bash ${c} blocked (not a listed script)`, 'orchestrator', 'Bash', sh(c), 'seat-limits', ['named scripts']);
+for (const [tool, c] of [['PowerShell', "& 'C:\\tmp\\x'"], ['PowerShell', 'cscript C:\\tmp\\x.js'], ['Bash', './x']])
+  tr(`holes r2: pam's ${c} blocked (not pms.cjs)`, 'pam', tool, sh(c), 'seat-limits', ["pam runs only the rig's pms.cjs"]);
+// Launchers start a program the guard can't follow.
+const LAUNCHER = ["a launcher starts a program the guard can't follow"];
+for (const seat of ['orchestrator', 'pam'])
+  for (const c of ['Start-Process $h', 'Start-Process notepad', 'start notepad', 'saps notepad', "ii 'C:\\tmp\\x.cmd'", 'Invoke-Item C:\\tmp\\x.txt', 'Start-Job -FilePath $f', 'Start-Job { Get-Date }', 'sajb { Get-Date }', "wt.exe 'C:\\tmp\\x.cmd'", 'conhost notepad', 'runas /user:x notepad'])
+    tr(`holes r2: ${seat}'s ${c} blocked`, seat, 'PowerShell', sh(c), 'unreadable', LAUNCHER);
+// Round 2's false blocks of round 1, and reads that stay allowed.
+for (const [tool, c] of [
+  ['PowerShell', 'Get-ChildItem env:HERDR_*'],
+  ['PowerShell', 'Get-Item env:HERDR_PANE_ID'],
+  ['PowerShell', 'Test-Path env:HERDR_ENV'],
+  ['PowerShell', 'Write-Host "HERDR_PANE_ID=$env:HERDR_PANE_ID"'],
+  ['PowerShell', "$env:HERDR_TAB_ID = 'w2:t1'"],
+  ['PowerShell', 'Get-CimInstance Win32_Process | Select-Object ProcessId, CommandLine'],
+  ['PowerShell', 'git log -S "Diagnostics.Process"'],
+  ['PowerShell', '[System.Diagnostics.Process]::GetCurrentProcess().Id'],
+  ['PowerShell', 'Write-Host $env:PATH'],
+  ['PowerShell', "$env:PATH -split ';'"],
+  ['PowerShell', 'Start-Sleep -Seconds 1'],
+  ['PowerShell', 'Get-Alias'],
+  ['Bash', 'echo "HERDR_PANE_ID=$HERDR_PANE_ID"'],
+  ['Bash', 'echo $PATH'],
+  ['Bash', 'echo "PATH=$PATH"'],
+  ['Bash', 'GIT_PAGER=cat git log -1'],
+  ['Bash', 'find . -name x.md'],
+])
+  t(`holes r2: the orchestrator's ${tool} ${c.slice(0, 60)} still allowed`, 'orchestrator', tool, sh(c), true);
 // What stays allowed: the role's own forms, reads of herdr's variables, $ and & and . where they are not a computed call.
 for (const [tool, c] of [
   ['PowerShell', `& '${RL}' example`],

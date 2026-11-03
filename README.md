@@ -120,7 +120,14 @@ Exit 2 blocks the call and sends the reason back to the model. The `|| exit 2` m
 - **Worktree safety:** recursive deletes of worktrees or `node_modules`, `git clean`, and anyone but the orchestrator creating or removing worktrees.
 - **The rules themselves:** edits anywhere in `<rig>\` (except the orchestrator's own working files), to any `.claude\settings*.json`, to Obsidian settings, and to the herdr skill folder.
 - **Agents the guard cannot see:** starting `claude` from a shell. A Claude started that way loads no rig settings and so has no guard. Lanes start only through `lanes.ps1`, which holds every lane's flags. The guard lets the orchestrator run it with its own project's name only, and never dot-sourced.
-- **Unreadable commands:** `Invoke-Expression`, encoded commands, `bash -c` style wrappers, inline interpreter code and a program piped into an interpreter. For the orchestrator and pam, the two seats with a script list, also every call whose program or script is computed (`& $x`, `& (Get-Command herdr)`, `. $x`, and in Bash a command word `$x`, `"$x"`, `$(...)` or a backtick), Bash `.` and `source`, `Import-Module`, `Invoke-Command` and `Add-Type`, and a program started through .NET, WMI or COM. A dot-source with no blank after the dot (`.'<path>'`) counts as a dot-source. The orchestrator may read herdr's `HERDR_*` variables but not change them: `lanes.ps1` trusts them to know its pane, tab and space.
+- **Unreadable commands:** `Invoke-Expression`, encoded commands, `bash -c` style wrappers, inline interpreter code and a program piped into an interpreter. For the orchestrator and pam, the two seats with a script list, also:
+  - every call whose program or script is computed (`& $x`, `& (Get-Command herdr)`, `& h$e`, `. $x`; in Bash a command word holding `$x`, `"$x"`, `$(...)` or a backtick, and `case`), and an interpreter's computed file (`node $f`);
+  - an alias (`Set-Alias`, the `alias:` drive, Bash's `alias`); Bash `.` and `source`; `Import-Module`, `using module`, `Invoke-Command`, `Add-Type` and a command's `.ScriptBlock`;
+  - a launcher (`Start-Process`, `start`, `Start-Job`, `Invoke-Item`, `wt`, `conhost`, `runas`), even for a document or a URL, and a program started through .NET, WMI or COM;
+  - a file run by its path that is not one of the listed scripts, whatever its extension (`.vbs`, `.exe`, none), and `cscript`, `wscript` and `mshta` with a file;
+  - setting `PATH`, `PATHEXT`, `PSModulePath` or `NODE_OPTIONS`, which decide which program, module or preloaded file runs.
+
+  A dot-source with no blank after the dot (`.'<path>'`) counts as a dot-source. `wt-new.ps1`, `wt-remove.ps1`, `lanes.ps1` and `close.ps1` come first in their command, with nothing before them, so no earlier statement can change what they call (an alias, a function, `PATH`, or herdr's `HERDR_*` variables, which `lanes.ps1` trusts to know its pane, tab and space).
 
 ### Core scope
 
@@ -142,7 +149,7 @@ Read these before you trust the rig with anything you cannot undo.
 - **The orchestrator runs with permission prompts off.** `rig.ps1` starts it with Claude Code's `--dangerously-skip-permissions` flag, so for that session the guard is the only barrier: nothing asks you before a call the guard allows.
 - **It does not read code a lane runs.** A test, script, build step, git hook or package that the coder writes and then runs executes outside the guard, with your permissions. The coder's worktree code runs by design, so you review the diff before you merge.
 - **The coder's shell copy or move after a `cd` out of its worktree is not caught yet.** The guard checks a shell command against the rig folder only by the common spellings of its path. A copy or move that follows a `cd` out of the worktree, or that uses a name built from `$env:HOMEDRIVE$env:HOMEPATH`, can reach rig files and a project's `core-scope.json`. The coder's role text forbids it, and a later change is meant to close it. The same gap lets a shell reach another project's checkout.
-- **A text filter has a ceiling.** A command name built at run time (`$(echo claude)`, `& $c`), a name with a stray backslash, and a few other tricks are not read in the coder's, angela's and oscar's shells; the orchestrator and pam refuse every computed call (see [What it blocks](#what-it-blocks)). A name assembled from pieces inside a string the guard can't read, such as `'her' + 'dr'` handed to a .NET call, is past any text filter. The role texts tell each lane not to work around a block.
+- **A text filter has a ceiling.** A command name built at run time (`$(echo claude)`, `& $c`), a name with a stray backslash, and a few other tricks are not read in the coder's, angela's and oscar's shells; the orchestrator and pam refuse every computed call (see [What it blocks](#what-it-blocks)). What stays past the orchestrator's and pam's rules is the ceiling of a text filter: a name assembled from pieces inside a string (`'Shell.Appl' + 'ication'` handed to a .NET or COM call), Windows' other program launchers (`rundll32`, `regsvr32`, `forfiles`, `msbuild` and the like), a program named by a variable or a setting a tool reads (`GIT_PAGER`, `EDITOR`, `git -c core.pager=...`), and rarer spellings of the refused forms. Closing those would take an allow-list of what the orchestrator's shell may run. The role texts tell each lane not to work around a block.
 - **It can block harmless text.** A commit message that holds the word `powershell`, or a command that holds `herdr` or `claude` next to some punctuation, can be stopped. Each block says which rule fired.
 - **Approvals are a role rule.** The guard cannot tell whether you really said "post". pam posts only when her brief holds the line `Jas approved: post`, and only the orchestrator writes that line, only after you say it.
 
@@ -428,7 +435,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File new-project.selftest.ps1
 
 | Suite | Covers | Count at the last run |
 |---|---|---|
-| `guard.test.cjs` | The guard's decisions: at least one blocked and one allowed case per rule, run on `example` and a second fixture. | 3085 checks |
+| `guard.test.cjs` | The guard's decisions: at least one blocked and one allowed case per rule, run on `example` and a second fixture. | 3229 checks |
 | `helpers.test.cjs` | `report.cjs`, `refocus.cjs`, `context-check.cjs`. | 79 checks |
 | `pms.test.cjs` | The board client's dry runs, refusals and filters, against a fake board on localhost. | 305 checks |
 | `config.test.cjs` | The profile validator, the `.gitignore` globs, `rig.ps1`, `lanes.ps1` and the worktree scripts, and `example`'s settings. | 175 checks |
