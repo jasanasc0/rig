@@ -1,6 +1,6 @@
 # lanes.ps1 - start a project's missing lanes in herdr (the rig README, Daily use). The orchestrator runs it from the PowerShell
 # tool at startup and whenever a lane is missing:
-#   & '<rig>\lanes.ps1' <project>
+#   & '<rig>\bin\lanes.ps1' <project>
 # Tab 1: coder right of the orchestrator's pane, angela below coder, oscar right of angela, each in the project's root; tab 2: pam in the
 # one pane of this space's seats tab (rig.ps1 opens it; this script never opens a tab). A lane already running in this space is left alone
 # and its pane anchors the next split. Everything that can stop it is checked before anything starts: the project, the guard's verdict on
@@ -9,13 +9,14 @@
 # exit 1 when a lane is not running at the end. The guard lets only the orchestrator run it, with exactly its own project's name, and
 # refuses the orchestrator's own `herdr agent start` and `pane split`: the lanes' flags live only here.
 param([Parameter(Mandatory = $true)][string]$Project)
-$rig = $PSScriptRoot
+# The rig is the folder above this script's bin\.
+$rig = Split-Path -Parent $PSScriptRoot
 $profileFile = Join-Path $rig "$Project\profile.json"
 if ($Project -cnotmatch '^[a-z0-9][a-z0-9-]*$' -or -not (Test-Path -LiteralPath $profileFile -PathType Leaf)) {
   throw "No project '$Project': there is no $profileFile. A project is a rig folder with a profile.json. Nothing was started."
 }
 # The guard refuses every call of a project whose profile is wrong (the check rig.ps1 makes); its reason prints here.
-'{"tool_name":"Read","tool_input":{"file_path":"README.md"}}' | node "$rig\guard.cjs" --project $Project --seat orchestrator
+'{"tool_name":"Read","tool_input":{"file_path":"README.md"}}' | node "$rig\hooks\guard.cjs" --project $Project --seat orchestrator
 if ($LASTEXITCODE -ne 0) { throw "The guard refuses $profileFile (its reason is above); nothing was started." }
 if ($env:HERDR_ENV -ne '1') { throw 'Not inside a herdr pane ($env:HERDR_ENV is not 1); nothing was started.' }
 $own = $env:HERDR_PANE_ID
@@ -31,7 +32,7 @@ $rules = ($rig -replace '\\', '/') + "/$Project/rules"
 # no way to herdr in the caller's shell. A throw still ends the script with its message, and exit with its code.
 try {
   # Invoke-Herdr: one herdr call, its result and what herdr answered (herdr.ps1, shared with rig.ps1 and close.ps1).
-  . (Join-Path $rig 'herdr.ps1')
+  . (Join-Path $PSScriptRoot 'herdr.ps1')
 
   # The flags each worker lane starts with (the rig README, The seats), the same in every project.
   $flags = @{

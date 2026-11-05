@@ -1,12 +1,12 @@
 'use strict';
-// Run: node <rig>/helpers.test.cjs   (exit 1 on any miss)
+// Run: node <rig>/test/helpers.test.cjs   (exit 1 on any miss)
 // The project it reads is example (this repo's); every other project is made in temp folders.
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { startHere, newestHandoff, render, noteHead, newInboxNotes, startupWarnings } = require('./refocus.cjs');
-const { lastContextTokens, warning } = require('./context-check.cjs');
-const { extractReport } = require('./report.cjs');
+const { startHere, newestHandoff, render, noteHead, newInboxNotes, startupWarnings } = require('../hooks/refocus.cjs');
+const { lastContextTokens, warning } = require('../hooks/context-check.cjs');
+const { extractReport } = require('../bin/report.cjs');
 
 let total = 0;
 let failed = 0;
@@ -190,8 +190,8 @@ check('noteHead caps the head at 200 characters (M7)', noteHead('x'.repeat(500))
 // v4 P3: each project's paths come from its profile; a plain layout (plain docs\, no vault, no docs history, no inbox) warns about
 // nothing; a missing or unknown --project is one warning line, never a throw; the rotation message names the project's handoff folder.
 // pg* below is that plain layout, a second project in temp folders.
-const { projectPaths, cli: refocusCli } = require('./refocus.cjs');
-const { loadProfile, RIG_DIR } = require('./guard.cjs');
+const { projectPaths, cli: refocusCli } = require('../hooks/refocus.cjs');
+const { loadProfile, RIG_DIR } = require('../hooks/guard.cjs');
 const RIGF = RIG_DIR; // refocus.cjs and context-check.cjs write the rig as the guard does: real path, case on disk, forward slashes
 const safe = (fn) => {
   try {
@@ -233,22 +233,22 @@ for (const [label, argv, words] of [
   check(`Refocus with ${label} prints one [rig] WARNING line`, out.startsWith('[rig] WARNING: ') && !out.includes('\n') && words.every((x) => out.includes(x)) && out.includes('--project <name> --seat <seat>'));
 }
 const { spawnSync } = require('child_process');
-let res = spawnSync(process.execPath, [path.join(__dirname, 'refocus.cjs'), '--seat', 'coder'], { encoding: 'utf8' });
+let res = spawnSync(process.execPath, [path.join(__dirname, '..', 'hooks', 'refocus.cjs'), '--seat', 'coder'], { encoding: 'utf8' });
 check('the Refocus CLI without --project exits 0 with the warning line', res.status === 0 && res.stdout.startsWith('[rig] WARNING: Refocus was started without --project'));
 // Started through a lower-cased path, Refocus and the rotation check still name the rig as the guard's RIG_DIR (case on disk), the way
 // the settings files' hook commands write it.
-const lowerRig = __dirname.toLowerCase();
-res = spawnSync(process.execPath, [path.join(lowerRig, 'refocus.cjs'), '--seat', 'coder'], { encoding: 'utf8' });
-check("Refocus started through a lower-cased path names the guard's RIG_DIR in its warning", res.status === 0 && res.stdout.includes(`node ${RIG_DIR}/refocus.cjs --project <name>`));
-res = spawnSync(process.execPath, [path.join(lowerRig, 'context-check.cjs')], { input: '', encoding: 'utf8' });
-check("the rotation check started through a lower-cased path names the guard's RIG_DIR in its warning", res.status === 0 && res.stdout.includes(`node ${RIG_DIR}/context-check.cjs --project <name>`));
+const lowerRig = path.dirname(__dirname).toLowerCase();
+res = spawnSync(process.execPath, [path.join(lowerRig, 'hooks', 'refocus.cjs'), '--seat', 'coder'], { encoding: 'utf8' });
+check("Refocus started through a lower-cased path names the guard's RIG_DIR in its warning", res.status === 0 && res.stdout.includes(`node ${RIG_DIR}/hooks/refocus.cjs --project <name>`));
+res = spawnSync(process.execPath, [path.join(lowerRig, 'hooks', 'context-check.cjs')], { input: '', encoding: 'utf8' });
+check("the rotation check started through a lower-cased path names the guard's RIG_DIR in its warning", res.status === 0 && res.stdout.includes(`node ${RIG_DIR}/hooks/context-check.cjs --project <name>`));
 const pw = safe(() => warning(400050, 400000, { name: 'sample', rootDir: 'D:/work/sample-app' }));
 check('the rotation warning names the project and its handoff folder', pw.includes('D:/work/sample-app/.agent/handoffs/<YYYY-MM-DD>_PROMPT_next_shift.md') && pw.includes("sample's main checkout"));
 check("example's rotation warning names its handoff folder", w.includes('C:/example-project/.agent/handoffs/<YYYY-MM-DD>_PROMPT_next_shift.md'));
 const transcriptFile = path.join(tmp, 'transcript.jsonl');
 fs.writeFileSync(transcriptFile, JSON.stringify({ type: 'assistant', message: { usage: { input_tokens: 10 } } }));
 const hookIn = JSON.stringify({ transcript_path: transcriptFile });
-const rotation = (args) => spawnSync(process.execPath, [path.join(__dirname, 'context-check.cjs'), ...args], { input: hookIn, encoding: 'utf8' });
+const rotation = (args) => spawnSync(process.execPath, [path.join(__dirname, '..', 'hooks', 'context-check.cjs'), ...args], { input: hookIn, encoding: 'utf8' });
 // V4-R3: the rotation check never blocks Jas's prompt. A missing or unknown --project, or a profile it can't read, is one warning line
 // on stdout and exit 0 (the guard still refuses the lane's tool calls).
 const oneWarning = (r, words) => r.status === 0 && r.stderr === '' && r.stdout.startsWith('[rig] WARNING: ') && r.stdout.endsWith('\n') && !r.stdout.slice(0, -1).includes('\n') && words.every((x) => r.stdout.includes(x));
@@ -264,11 +264,12 @@ check('the rotation check with --project example under the limit: exit 0, nothin
 // and the rotation check each print one warning line naming the file and exit 0.
 const rigCopy = path.join(tmp, 'rigcopy');
 fs.mkdirSync(path.join(rigCopy, 'broken'), { recursive: true });
-for (const f of ['guard.cjs', 'refocus.cjs', 'context-check.cjs']) fs.copyFileSync(path.join(__dirname, f), path.join(rigCopy, f));
+fs.mkdirSync(path.join(rigCopy, 'hooks'));
+for (const f of ['guard.cjs', 'refocus.cjs', 'context-check.cjs']) fs.copyFileSync(path.join(__dirname, '..', 'hooks', f), path.join(rigCopy, 'hooks', f));
 fs.writeFileSync(path.join(rigCopy, 'broken', 'profile.json'), '{ "name": "broken",');
-res = spawnSync(process.execPath, [path.join(rigCopy, 'refocus.cjs'), '--project', 'broken', '--seat', 'coder'], { encoding: 'utf8' });
+res = spawnSync(process.execPath, [path.join(rigCopy, 'hooks', 'refocus.cjs'), '--project', 'broken', '--seat', 'coder'], { encoding: 'utf8' });
 check('Refocus with a profile that is not valid JSON: one warning line naming the file, exit 0', oneWarning(res, ['broken/profile.json is not valid JSON']));
-res = spawnSync(process.execPath, [path.join(rigCopy, 'context-check.cjs'), '--project', 'broken'], { input: hookIn, encoding: 'utf8' });
+res = spawnSync(process.execPath, [path.join(rigCopy, 'hooks', 'context-check.cjs'), '--project', 'broken'], { input: hookIn, encoding: 'utf8' });
 check('the rotation check with a profile that is not valid JSON: one warning line naming the file, exit 0', oneWarning(res, ['broken/profile.json is not valid JSON']));
 
 // settingsrc build: Refocus --claude-md, its own SessionStart hook. Where a profile says projectSettings false, Claude Code doesn't load the
@@ -277,7 +278,7 @@ check('the rotation check with a profile that is not valid JSON: one warning lin
 // live in the temp rig copy (rigCopy, whose guard and refocus are this folder's), their roots in tmp written with forward slashes.
 const CLAUDE_MD_HEADER = (name) =>
   `[rig] ${name}'s repo settings are off in rig sessions (they can run commands; see its profile's projectSettings), so its CLAUDE.md is not loaded. It follows; read it as the project's CLAUDE.md, and where it differs from your role file or the guard, they win.`;
-const exProfileJson = JSON.parse(fs.readFileSync(path.join(__dirname, 'example', 'profile.json'), 'utf8'));
+const exProfileJson = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'example', 'profile.json'), 'utf8'));
 const scratchProject = (name, projectSettings) => {
   const root = path.join(tmp, name + '-root');
   fs.mkdirSync(root, { recursive: true });
@@ -287,7 +288,7 @@ const scratchProject = (name, projectSettings) => {
 };
 const offRoot = scratchProject('scratchoff', false);
 const onRoot = scratchProject('scratchon', true);
-const claudeMd = (project, extra = []) => spawnSync(process.execPath, [path.join(rigCopy, 'refocus.cjs'), '--project', project, '--seat', 'coder', '--claude-md', ...extra], { encoding: 'utf8' });
+const claudeMd = (project, extra = []) => spawnSync(process.execPath, [path.join(rigCopy, 'hooks', 'refocus.cjs'), '--project', project, '--seat', 'coder', '--claude-md', ...extra], { encoding: 'utf8' });
 const printed = (r, text) => r.status === 0 && r.stderr === '' && r.stdout === text + '\n';
 fs.writeFileSync(path.join(offRoot, 'CLAUDE.md'), '\u{FEFF}# Scratch rules\r\nRun npm run lint before you report.\r\n');
 check('--claude-md, projectSettings false, a short CLAUDE.md with a BOM and CRLF: the header, then the text (no BOM, LF), exit 0', printed(claudeMd('scratchoff'), CLAUDE_MD_HEADER('scratchoff') + '\n# Scratch rules\nRun npm run lint before you report.\n'));
@@ -309,11 +310,11 @@ fs.writeFileSync(path.join(onRoot, 'CLAUDE.md'), '# On rules\n');
 res = claudeMd('scratchon');
 check('--claude-md, projectSettings true, a CLAUDE.md there: nothing, exit 0', res.status === 0 && res.stdout === '' && res.stderr === '');
 check('--claude-md with a profile that is not valid JSON: one warning line naming the file, exit 0', oneWarning(claudeMd('broken'), ['broken/profile.json is not valid JSON', '--claude-md']));
-check('--claude-md without --project: one warning line, exit 0', oneWarning(spawnSync(process.execPath, [path.join(rigCopy, 'refocus.cjs'), '--seat', 'coder', '--claude-md'], { encoding: 'utf8' }), ['without --project']));
+check('--claude-md without --project: one warning line, exit 0', oneWarning(spawnSync(process.execPath, [path.join(rigCopy, 'hooks', 'refocus.cjs'), '--seat', 'coder', '--claude-md'], { encoding: 'utf8' }), ['without --project']));
 // The temp rig's own refocus.cjs in process (it loads the temp rig's guard copy, so it reads the scratch profiles): a rig in another folder.
-const rigRefocus = require(path.join(rigCopy, 'refocus.cjs'));
-const rigGuard = require(path.join(rigCopy, 'guard.cjs'));
-res = spawnSync(process.execPath, [path.join(rigCopy, 'refocus.cjs'), '--project', 'scratchon', '--seat', 'orchestrator', '--claude-md'], { encoding: 'utf8' });
+const rigRefocus = require(path.join(rigCopy, 'hooks', 'refocus.cjs'));
+const rigGuard = require(path.join(rigCopy, 'hooks', 'guard.cjs'));
+res = spawnSync(process.execPath, [path.join(rigCopy, 'hooks', 'refocus.cjs'), '--project', 'scratchon', '--seat', 'orchestrator', '--claude-md'], { encoding: 'utf8' });
 check('--claude-md for the orchestrator of a projectSettings true project with a CLAUDE.md: nothing, exit 0', res.status === 0 && res.stdout === '' && res.stderr === '');
 check('--claude-md for it in process: nothing', safe(() => rigRefocus.cli(['node', 'refocus.cjs', '--project', 'scratchon', '--seat', 'orchestrator', '--claude-md'])) === '');
 const offRootF = offRoot.replace(/\\/g, '/');
@@ -329,7 +330,7 @@ fs.writeFileSync(path.join(offRoot, 'CLAUDE.md'), '# Scratch rules\n');
 for (const project of ['scratchon', 'scratchoff'])
   for (const seat of ['orchestrator', 'coder', 'angela', 'oscar', 'pam'])
     check(`Refocus without --claude-md (${project} ${seat}) dispatches to render() of its paths (render itself is unchanged since 3d78192)`, safe(() => rigRefocus.cli(['node', 'refocus.cjs', '--project', project, '--seat', seat])) === safe(() => rigRefocus.render(seat, rigRefocus.projectPaths(rigGuard.loadProfile(project)))));
-res = spawnSync(process.execPath, [path.join(rigCopy, 'refocus.cjs'), '--project', 'scratchoff', '--seat', 'coder'], { encoding: 'utf8' });
+res = spawnSync(process.execPath, [path.join(rigCopy, 'hooks', 'refocus.cjs'), '--project', 'scratchoff', '--seat', 'coder'], { encoding: 'utf8' });
 check('Refocus without --claude-md, projectSettings false and a CLAUDE.md: none of it printed, exit 0', res.status === 0 && !res.stdout.includes('CLAUDE.md') && !res.stdout.includes('Scratch rules'));
 
 fs.rmSync(tmp, { recursive: true, force: true });

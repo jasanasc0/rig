@@ -1,7 +1,7 @@
 # close.ps1 - end a project's shift in herdr (the rig README, Daily use): each lane exits through /exit and its pane closes,
 # then the seats tab (when only its lanes were in it), then the orchestrator's own pane, last. The orchestrator runs it as its final tool
 # call, from the PowerShell tool:
-#   & '<rig>\close.ps1' <project>          (with -Force only after Jas said "close anyway")
+#   & '<rig>\bin\close.ps1' <project>          (with -Force only after Jas said "close anyway")
 # Everything that can stop it is checked before anything closes. The panes come from the project's profile (its lanes, never an argument),
 # found by their herdr agent names, and only in the orchestrator's own herdr space; it never runs herdr server stop or workspace close and
 # never touches a pane or tab of another space. The guard lets only the orchestrator run it, and only with its own project's name.
@@ -11,13 +11,14 @@ param(
   # closes after the 30 s poll; herdr refuses a blocked lane's /exit, so its pane closes at once).
   [switch]$Force
 )
-$rig = $PSScriptRoot
+# The rig is the folder above this script's bin\.
+$rig = Split-Path -Parent $PSScriptRoot
 $profileFile = Join-Path $rig "$Project\profile.json"
 if ($Project -cnotmatch '^[a-z0-9][a-z0-9-]*$' -or -not (Test-Path -LiteralPath $profileFile -PathType Leaf)) {
   throw "No project '$Project': there is no $profileFile. A project is a rig folder with a profile.json. Nothing was closed."
 }
 # The guard refuses every call of a project whose profile is wrong (the check rig.ps1 makes); its reason prints here.
-'{"tool_name":"Read","tool_input":{"file_path":"README.md"}}' | node "$rig\guard.cjs" --project $Project --seat orchestrator
+'{"tool_name":"Read","tool_input":{"file_path":"README.md"}}' | node "$rig\hooks\guard.cjs" --project $Project --seat orchestrator
 if ($LASTEXITCODE -ne 0) { throw "The guard refuses $profileFile (its reason is above); nothing was closed." }
 # profile.json reader: guard.cjs (loadProfile) is the one validator (asked above); this script reads only the lane names.
 $lanes = @((Get-Content -LiteralPath $profileFile -Raw | ConvertFrom-Json).lanes.PSObject.Properties | Where-Object { $_.Name -ne 'orchestrator' } | ForEach-Object { $_.Value })
@@ -27,7 +28,7 @@ if ($env:HERDR_ENV -ne '1') { throw 'Not inside a herdr pane ($env:HERDR_ENV is 
 # no way to herdr in the caller's shell (lean review, Important 1). A throw still ends the script with its message, and exit with its code.
 try {
   # Invoke-Herdr: one herdr call, its result and what herdr answered (herdr.ps1, shared with rig.ps1 and lanes.ps1).
-  . (Join-Path $rig 'herdr.ps1')
+  . (Join-Path $PSScriptRoot 'herdr.ps1')
 
   # This pane and its space: --current is the calling pane (herdr's caller context), never the pane Jas has focused.
   $r = Invoke-Herdr pane current --current

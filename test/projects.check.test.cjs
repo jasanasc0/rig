@@ -1,5 +1,5 @@
 'use strict';
-// Run: node <rig>/projects.check.test.cjs   (exit 1 on any FAIL)
+// Run: node <rig>/test/projects.check.test.cjs   (exit 1 on any FAIL)
 // Tests projects.check.cjs, with projects made by new-project.ps1, on temp copies of the rig (guard.cjs, refocus.cjs, context-check.cjs,
 // projects.check.cjs, new-project.ps1 and example/) and temp roots. It never reads or writes this rig's own project folders.
 // shortcut: a TEMP path with a space makes new-project.ps1 refuse every project here (it refuses a rig path with a space); set TEMP to a
@@ -9,12 +9,15 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
-const ENGINE = ['guard.cjs', 'refocus.cjs', 'context-check.cjs', 'projects.check.cjs', 'new-project.ps1', '.gitignore', 'example'];
+const ENGINE = ['hooks/guard.cjs', 'hooks/refocus.cjs', 'hooks/context-check.cjs', 'bin/projects.check.cjs', 'bin/new-project.ps1', '.gitignore', 'example'];
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'projects-check-'));
 let rigs = 0;
 const tempRig = () => {
   const dir = path.join(TMP, 'rig' + ++rigs);
-  for (const f of ENGINE) fs.cpSync(path.join(__dirname, f), path.join(dir, f), { recursive: true });
+  for (const f of ENGINE) {
+    fs.mkdirSync(path.dirname(path.join(dir, f)), { recursive: true });
+    fs.cpSync(path.join(__dirname, '..', f), path.join(dir, f), { recursive: true });
+  }
   return dir;
 };
 const tempRoot = () => {
@@ -23,11 +26,11 @@ const tempRoot = () => {
   return dir;
 };
 const check = (rig, ...names) => {
-  const r = spawnSync(process.execPath, [path.join(rig, 'projects.check.cjs'), ...names], { encoding: 'utf8' });
+  const r = spawnSync(process.execPath, [path.join(rig, 'bin', 'projects.check.cjs'), ...names], { encoding: 'utf8' });
   return { code: r.status, out: (r.stdout || '') + (r.stderr || '') };
 };
 const newProject = (rig, name, prefix) => {
-  const r = spawnSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(rig, 'new-project.ps1'), '-Name', name, '-Root', tempRoot(), '-Prefix', prefix], {
+  const r = spawnSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(rig, 'bin', 'new-project.ps1'), '-Name', name, '-Root', tempRoot(), '-Prefix', prefix], {
     encoding: 'utf8',
   });
   return { code: r.status, out: (r.stdout || '') + (r.stderr || '') };
@@ -78,7 +81,7 @@ test('a project made by new-project passes', () => {
 test('its lanes.ps1 line names its own project and its guard lets its orchestrator run it, with no herdr agent start or pane split line (new-project.ps1 ran through a lower-cased path; the lean build)', () => {
   const rig = tempRig();
   const made = newProject(rig.toLowerCase(), 'alpha', 'al');
-  const { decide, RIG_DIR } = require(path.join(rig, 'guard.cjs'));
+  const { decide, RIG_DIR } = require(path.join(rig, 'hooks', 'guard.cjs'));
   const lines = fs.readFileSync(path.join(rig, 'alpha', 'rules', 'orchestrator.md'), 'utf8').split(/\r?\n/);
   const lanes = lines.filter((l) => l.startsWith("& '") && l.includes('lanes.ps1'));
   const got = lanes.length === 1 ? decide({ seat: 'orchestrator', tool_name: 'PowerShell', tool_input: { command: lanes[0] }, cwd: rig }, { profile: 'alpha' }) : null;
@@ -147,10 +150,10 @@ test('a hook naming another project fails (--project is a whole word: alpha-2 is
 
 test('a missing hook script fails (context-check.cjs gone: the orchestrator rotation hook names it)', () => {
   const rig = rigWith(['alpha', 'al']);
-  fs.rmSync(path.join(rig, 'context-check.cjs'));
+  fs.rmSync(path.join(rig, 'hooks', 'context-check.cjs'));
   const r = check(rig);
   const lines = r.out.split(/\r?\n/).filter((l) => l.startsWith('FAIL '));
-  return [r.code === 1 && lines.length === 1 && /^FAIL alpha: orchestrator\.settings\.json UserPromptSubmit hook "node \S+\/context-check\.cjs [^"]*": \S+\/context-check\.cjs is missing$/.test(lines[0]), r.out];
+  return [r.code === 1 && lines.length === 1 && /^FAIL alpha: orchestrator\.settings\.json UserPromptSubmit hook "node \S+\/context-check\.cjs[^"]*": \S+\/context-check\.cjs is missing$/.test(lines[0]), r.out];
 });
 
 test("a profile missing the other project's knowledge folder fails", () => {

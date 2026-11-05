@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 'use strict';
 // Rotation warning: UserPromptSubmit hook for the orchestrator (the rig README, Daily use).
-// Settings entry: node <rig>/context-check.cjs --project <name>
+// Settings entry: node <rig>/hooks/context-check.cjs --project <name>
 const fs = require('fs');
+const path = require('path');
 
-const RIG = fs.realpathSync.native(__dirname).replace(/\\/g, '/'); // the rig: this file's folder, as guard.cjs's RIG_DIR writes it
+const RIG = fs.realpathSync.native(path.dirname(__dirname)).replace(/\\/g, '/'); // the rig: the folder above this file's hooks/, as guard.cjs's RIG_DIR writes it
 
 const LIMIT = Number(process.env.RIG_CONTEXT_LIMIT) || 400000; // tokens; the one calibration knob
 
@@ -52,7 +53,7 @@ if (require.main === module) {
   process.stdin.on('data', (d) => (raw += d));
   process.stdin.on('end', () => {
     if (problem) {
-      process.stdout.write(`[rig] WARNING: ${problem}, so there is no rotation check in this session. The hook is node ${RIG}/context-check.cjs --project <name>; tell Jas (a lane started before v4 has to be restarted).\n`);
+      process.stdout.write(`[rig] WARNING: ${problem}, so there is no rotation check in this session. The hook is node ${RIG}/hooks/context-check.cjs --project <name>; tell Jas (a lane started before v4 has to be restarted).\n`);
       return;
     }
     try {

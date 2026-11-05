@@ -2,11 +2,11 @@
 'use strict';
 // Refocus: SessionStart hook (startup, clear, compact). Prints the lane's intent back into its context (the rig README, Daily use).
 // For the orchestrator it also prints Jas's new inbox notes (a project's optional work\inbox\) and the startup warnings.
-// Settings entry: node <rig>/refocus.cjs --project <name> --seat <orchestrator|coder|angela|oscar|pam>
+// Settings entry: node <rig>/hooks/refocus.cjs --project <name> --seat <orchestrator|coder|angela|oscar|pam>
 const fs = require('fs');
 const path = require('path');
 
-const RIG = fs.realpathSync.native(__dirname).replace(/\\/g, '/'); // the rig: this file's folder, as guard.cjs's RIG_DIR writes it
+const RIG = fs.realpathSync.native(path.dirname(__dirname)).replace(/\\/g, '/'); // the rig: the folder above this file's hooks/, as guard.cjs's RIG_DIR writes it
 // A project's paths: its rig work folder, and the handoffs and docs folders in its main checkout (from <rig>/<name>/profile.json).
 const projectPaths = (P) => ({ work: `${RIG}/${P.name}/work`, handoffs: `${P.rootDir}/.agent/handoffs`, docs: `${P.rootDir}/docs` });
 const INBOX_SHOWN = 10;
@@ -256,8 +256,8 @@ function cli(argv) {
     return mdMode ? claudeMd(P) : render(arg('--seat') || '', projectPaths(P));
   } catch (e) {
     return mdMode
-      ? `[rig] WARNING: ${e.message}, so the project's CLAUDE.md was not printed. Every CLAUDE.md hook is node ${RIG}/refocus.cjs --project <name> --seat <seat> --claude-md. Tell Jas.`
-      : `[rig] WARNING: ${e.message}, so no intent or notes were loaded. Every Refocus hook is node ${RIG}/refocus.cjs --project <name> --seat <seat>. Tell Jas.`;
+      ? `[rig] WARNING: ${e.message}, so the project's CLAUDE.md was not printed. Every CLAUDE.md hook is node ${RIG}/hooks/refocus.cjs --project <name> --seat <seat> --claude-md. Tell Jas.`
+      : `[rig] WARNING: ${e.message}, so no intent or notes were loaded. Every Refocus hook is node ${RIG}/hooks/refocus.cjs --project <name> --seat <seat>. Tell Jas.`;
   }
 }
 

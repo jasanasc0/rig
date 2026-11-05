@@ -1,12 +1,12 @@
 'use strict';
-// Run: node <rig>/config.test.cjs   (exit 1 on any miss)
+// Run: node <rig>/test/config.test.cjs   (exit 1 on any miss)
 // The engine's own setup: example's settings files (with {{RIG}} filled in as new-project.ps1 does), mcp.json, work folder and profile,
 // rig.ps1's launch, the worktree scripts and the .gitignore globs. This machine's real projects are projects.check.cjs's.
 const fs = require('fs');
 const path = require('path');
-const { RIG_DIR, loadProfile } = require('./guard.cjs');
+const { RIG_DIR, loadProfile } = require('../hooks/guard.cjs');
 
-const RIG = __dirname;
+const RIG = path.dirname(__dirname); // the rig: this test is in test/
 const PLUGINS = [
   'superpowers@claude-plugins-official',
   'figma@claude-plugins-official',
@@ -56,20 +56,20 @@ for (const project of PROJECTS)
       continue;
     }
     const hooks = s.hooks || {};
-    check(`${tag}: guard runs on every tool as seat ${want.guard} and fails closed`, commands(hooks, 'PreToolUse', '*').includes(`node ${RIG_DIR}/guard.cjs --project ${project} --seat ${want.guard} || exit 2`));
+    check(`${tag}: guard runs on every tool as seat ${want.guard} and fails closed`, commands(hooks, 'PreToolUse', '*').includes(`node ${RIG_DIR}/hooks/guard.cjs --project ${project} --seat ${want.guard} || exit 2`));
     for (const m of ['startup', 'clear', 'compact'])
-      check(`${tag}: refocus on ${m}`, commands(hooks, 'SessionStart', m).includes(`node ${RIG_DIR}/refocus.cjs --project ${project} --seat ${seat}`));
+      check(`${tag}: refocus on ${m}`, commands(hooks, 'SessionStart', m).includes(`node ${RIG_DIR}/hooks/refocus.cjs --project ${project} --seat ${seat}`));
     // settingsrc build: each of those entries runs Refocus, then Refocus --claude-md as its own (second) hook, with its own project and seat,
     // so the CLAUDE.md's 9,000 characters never share a hook's output cap with Refocus's own. It prints nothing where projectSettings is true.
     for (const m of ['startup', 'clear', 'compact']) {
-      const refocus = `node ${RIG_DIR}/refocus.cjs --project ${project} --seat ${seat}`;
+      const refocus = `node ${RIG_DIR}/hooks/refocus.cjs --project ${project} --seat ${seat}`;
       const entries = (hooks.SessionStart || []).filter((e) => e.matcher === m);
       check(
         `${tag}: on ${m}, Refocus then Refocus --claude-md, two hooks of one entry`,
         entries.length === 1 && JSON.stringify(entries[0].hooks) === JSON.stringify([{ type: 'command', command: refocus }, { type: 'command', command: refocus + ' --claude-md' }])
       );
     }
-    check(`${tag}: rotation check ${want.rotation ? 'present' : 'absent'}`, commands(hooks, 'UserPromptSubmit').includes(`node ${RIG_DIR}/context-check.cjs --project ${project}`) === want.rotation);
+    check(`${tag}: rotation check ${want.rotation ? 'present' : 'absent'}`, commands(hooks, 'UserPromptSubmit').includes(`node ${RIG_DIR}/hooks/context-check.cjs --project ${project}`) === want.rotation);
     for (const p of want.off) check(`${tag}: ${p} off`, Boolean(s.enabledPlugins) && s.enabledPlugins[p] === false);
     for (const p of want.on) check(`${tag}: ${p} on`, Boolean(s.enabledPlugins) && s.enabledPlugins[p] === true);
     if (seat === 'orchestrator') check(`${tag}: supermemory not switched off (the memory lives in this lane)`, (s.enabledPlugins || {})['supermemory@supermemory-plugins'] !== false);
@@ -114,7 +114,7 @@ check(
     !fs.existsSync(path.join(RIG, 'example', 'work', 'inbox-log.md'))
 );
 
-const rigPs1 = fs.existsSync(path.join(RIG, 'rig.ps1')) ? fs.readFileSync(path.join(RIG, 'rig.ps1'), 'utf8') : '';
+const rigPs1 = fs.existsSync(path.join(RIG, 'bin', 'rig.ps1')) ? fs.readFileSync(path.join(RIG, 'bin', 'rig.ps1'), 'utf8') : '';
 check(
   'rig.ps1 starts the orchestrator with its flags',
   rigPs1.includes('claude --dangerously-skip-permissions --model opus --effort high -n $lane --settings "$rig\\$Project\\rules\\orchestrator.settings.json" --append-system-prompt-file "$rig\\$Project\\rules\\orchestrator.md"')
@@ -140,16 +140,16 @@ const rulesCheck = rigPs1.indexOf('foreach ($f in "$rig\\$Project\\rules\\orches
 check("rig.ps1 checks the project's orchestrator settings and role file exist before it starts claude", rulesCheck > -1 && rigPs1.includes('Test-Path -LiteralPath $f -PathType Leaf') && rulesCheck < rigPs1.indexOf('claude --dangerously-skip-permissions'));
 // v4: the worktree scripts read the project from the name's prefix, through the profiles next to them.
 for (const script of ['wt-new.ps1', 'wt-remove.ps1']) {
-  const text = fs.existsSync(path.join(RIG, script)) ? fs.readFileSync(path.join(RIG, script), 'utf8') : '';
-  check(`${script} finds the project by ticketPrefix and has no machine path`, text.includes('$rig = $PSScriptRoot') && text.includes('ticketPrefix') && !/[a-z]:\\users\\/i.test(text));
+  const text = fs.existsSync(path.join(RIG, 'bin', script)) ? fs.readFileSync(path.join(RIG, 'bin', script), 'utf8') : '';
+  check(`${script} finds the project by ticketPrefix and has no machine path`, text.includes('$rig = Split-Path -Parent $PSScriptRoot') && text.includes('ticketPrefix') && !/[a-z]:\\users\\/i.test(text));
 }
-// Runs anywhere: the engine's code holds no machine path. Each script finds the rig as the folder it is in (__dirname, $PSScriptRoot) and
+// Runs anywhere: the engine's code holds no machine path. Each script finds the rig as the folder above its own, bin/ or hooks/ (__dirname, $PSScriptRoot) and
 // the home folder from os.homedir() or $HOME; a path under some C:\Users\<name> in the code would be one machine's.
-const ENGINE_CODE = ['guard.cjs', 'pms.cjs', 'report.cjs', 'refocus.cjs', 'context-check.cjs', 'projects.check.cjs', 'content-gate.cjs', 'rig.ps1', 'lanes.ps1', 'herdr.ps1', 'close.ps1', 'wt-new.ps1', 'wt-remove.ps1', 'statusline.ps1', 'new-project.ps1'];
+const ENGINE_CODE = ['hooks/guard.cjs', 'bin/pms.cjs', 'bin/report.cjs', 'hooks/refocus.cjs', 'hooks/context-check.cjs', 'bin/projects.check.cjs', 'bin/content-gate.cjs', 'bin/rig.ps1', 'bin/lanes.ps1', 'bin/herdr.ps1', 'bin/close.ps1', 'bin/wt-new.ps1', 'bin/wt-remove.ps1', 'hooks/statusline.ps1', 'bin/new-project.ps1'];
 const machinePaths = ENGINE_CODE.filter((f) => !fs.existsSync(path.join(RIG, f)) || /[a-z]:[\\/]+users[\\/]/i.test(fs.readFileSync(path.join(RIG, f), 'utf8')));
 check(`no engine script holds a machine path (C:\\Users\\<name>) or is missing${machinePaths.length ? ' (' + machinePaths.join(', ') + ')' : ''}`, machinePaths.length === 0);
 for (const script of ['rig.ps1', 'lanes.ps1', 'close.ps1'])
-  check(`${script} finds the rig as its own folder ($PSScriptRoot)`, (fs.existsSync(path.join(RIG, script)) ? fs.readFileSync(path.join(RIG, script), 'utf8') : '').includes('$rig = $PSScriptRoot'));
+  check(`${script} finds the rig as the folder above its own (Split-Path -Parent $PSScriptRoot)`, (fs.existsSync(path.join(RIG, 'bin', script)) ? fs.readFileSync(path.join(RIG, 'bin', script), 'utf8') : '').includes('$rig = Split-Path -Parent $PSScriptRoot'));
 
 // example's profile, through the guard's validator (loadProfile, the one the scripts rely on): it loads, it names its pam lane (pam build),
 // and its projectSettings is false, the template's default (settingsrc build: every rig session of the project starts with
@@ -183,12 +183,14 @@ check('settingsrc: example has projectSettings false', Boolean(exampleJson) && e
   // One temp rig holding these profiles (folders p0, p1, ...); the output of its projects.check.cjs.
   const clashRun = (rig, profiles) => {
     fs.mkdirSync(rig);
-    for (const f of ['guard.cjs', 'projects.check.cjs']) fs.copyFileSync(path.join(RIG, f), path.join(rig, f));
+    fs.mkdirSync(path.join(rig, 'hooks'));
+    fs.mkdirSync(path.join(rig, 'bin'));
+    for (const f of ['hooks/guard.cjs', 'bin/projects.check.cjs']) fs.copyFileSync(path.join(RIG, f), path.join(rig, f));
     profiles.forEach((p, i) => {
       fs.mkdirSync(path.join(rig, 'p' + i));
       fs.writeFileSync(path.join(rig, 'p' + i, 'profile.json'), JSON.stringify(p));
     });
-    const r = spawnSync(process.execPath, [path.join(rig, 'projects.check.cjs')], { encoding: 'utf8' });
+    const r = spawnSync(process.execPath, [path.join(rig, 'bin', 'projects.check.cjs')], { encoding: 'utf8' });
     return (r.stdout || '') + (r.stderr || '');
   };
   try {
@@ -226,12 +228,13 @@ check(
   const os = require('os');
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'rig-wtprefix-'));
   try {
+    fs.mkdirSync(path.join(tmp, 'bin'));
     for (const script of ['wt-new.ps1', 'wt-remove.ps1']) {
-      fs.copyFileSync(path.join(RIG, script), path.join(tmp, script));
+      fs.copyFileSync(path.join(RIG, 'bin', script), path.join(tmp, 'bin', script));
       for (const [prefix, matches] of [['c+', false], ['c', true]]) {
         fs.mkdirSync(path.join(tmp, 'p'), { recursive: true });
         fs.writeFileSync(path.join(tmp, 'p', 'profile.json'), JSON.stringify({ ticketPrefix: prefix, root: path.join(tmp, 'no-such-root'), defaultBranch: 'main', worktreeCopy: [], nodeModulesJunction: false }));
-        const r = spawnSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(tmp, script), 'c12-x'], { encoding: 'utf8' });
+        const r = spawnSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(tmp, 'bin', script), 'c12-x'], { encoding: 'utf8' });
         const out = (r.stdout || '') + (r.stderr || '');
         check(`M4: ${script} with prefix "${prefix}" ${matches ? 'finds' : 'does not find'} the project for c12-x`, r.status !== 0 && out.includes('No single project') === !matches);
       }
@@ -251,7 +254,7 @@ check(
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'rig-wtresume-'));
   const git = (cwd, ...args) => spawnSync('git', ['-c', 'user.name=rig-test', '-c', 'user.email=rig-test@localhost', ...args], { cwd, encoding: 'utf8' });
   const wtNew = (...args) => {
-    const r = spawnSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(tmp, 'rig', 'wt-new.ps1'), ...args], { encoding: 'utf8' });
+    const r = spawnSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(tmp, 'rig', 'bin', 'wt-new.ps1'), ...args], { encoding: 'utf8' });
     return { status: r.status, out: (r.stdout || '') + (r.stderr || '') };
   };
   const read = (f) => (fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : '(none)');
@@ -277,7 +280,8 @@ check(
     const one = git(root, 'rev-parse', 'HEAD').stdout.trim();
     fs.mkdirSync(path.join(root, 'node_modules'));
     fs.mkdirSync(path.join(tmp, 'rig', 't'), { recursive: true });
-    fs.copyFileSync(path.join(RIG, 'wt-new.ps1'), path.join(tmp, 'rig', 'wt-new.ps1'));
+    fs.mkdirSync(path.join(tmp, 'rig', 'bin'), { recursive: true });
+    fs.copyFileSync(path.join(RIG, 'bin', 'wt-new.ps1'), path.join(tmp, 'rig', 'bin', 'wt-new.ps1'));
     fs.writeFileSync(path.join(tmp, 'rig', 't', 'profile.json'), JSON.stringify({ ticketPrefix: 't', root, defaultBranch: 'main', worktreeCopy: [], nodeModulesJunction: true }));
     const active = path.join(tmp, 'rig', 't', 'active-worktree');
     const wtPath = (n) => path.join(root, '.claude', 'worktrees', n);

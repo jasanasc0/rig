@@ -1,6 +1,6 @@
 'use strict';
 // Content gate: fails when a word from a local, git-ignored list appears in tracked files, their paths, or commits (message, author,
-// committer). Run: node content-gate.cjs [--list <file>] [--tree <rev>] [--messages <rev-range>]
+// committer). Run: node bin/content-gate.cjs [--list <file>] [--tree <rev>] [--messages <rev-range>]
 // Exit: 0 clean (or no list), 1 hits (one "<where>: <word>" line each), 2 usage error or a list that is not UTF-8 or holds no words.
 const fs = require('fs');
 const path = require('path');
@@ -49,12 +49,12 @@ function git(repo, args) {
 }
 
 function main(argv) {
-  const repo = __dirname;
+  const repo = path.dirname(__dirname); // the repo root: this file is in bin/
   const opt = {};
   for (let i = 0; i < argv.length; i += 2) {
     const k = argv[i];
     if (!['--list', '--tree', '--messages'].includes(k) || argv[i + 1] === undefined) {
-      console.error('usage: node content-gate.cjs [--list <file>] [--tree <rev>] [--messages <rev-range>]');
+      console.error('usage: node bin/content-gate.cjs [--list <file>] [--tree <rev>] [--messages <rev-range>]');
       return 2;
     }
     opt[k.slice(2)] = argv[i + 1];

@@ -1,7 +1,7 @@
-# wt.selftest.ps1 - checks wt-new.ps1 and wt-remove.ps1 (next to this file) in %TEMP%: copies of both in a temp rig whose one project,
+# wt.selftest.ps1 - checks bin\wt-new.ps1 and bin\wt-remove.ps1 in %TEMP%: copies of both in a temp rig whose one project,
 # example (its profile with a temp root, a .env.local to copy and a node_modules junction), points at a throwaway repo with a local bare
 # origin. No network and no real checkout. Creates and removes the worktree ex0-rigselftest there; the temp folder goes at the end.
-# Run: powershell -NoProfile -ExecutionPolicy Bypass -File <rig>\wt.selftest.ps1
+# Run: powershell -NoProfile -ExecutionPolicy Bypass -File <rig>\test\wt.selftest.ps1
 $Project = 'example'
 $tmp = Join-Path ([IO.Path]::GetTempPath()) ('rig-wt-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
 $rig = Join-Path $tmp 'rig'
@@ -23,8 +23,9 @@ try {
   if ($LASTEXITCODE -ne 0) { throw 'the throwaway repo could not be set up (git push to its local origin failed)' }
   New-Item -ItemType Directory (Join-Path $repo 'node_modules'), (Join-Path $rig $Project) | Out-Null
   [IO.File]::WriteAllText((Join-Path $repo 'node_modules\keep.txt'), 'x')
-  foreach ($f in 'wt-new.ps1', 'wt-remove.ps1') { Copy-Item -LiteralPath (Join-Path $PSScriptRoot $f) -Destination $rig -ErrorAction Stop }
-  $exProfile = Get-Content -LiteralPath (Join-Path $PSScriptRoot "$Project\profile.json") -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+  New-Item -ItemType Directory (Join-Path $rig 'bin') | Out-Null
+  foreach ($f in 'wt-new.ps1', 'wt-remove.ps1') { Copy-Item -LiteralPath (Join-Path $PSScriptRoot "..\bin\$f") -Destination (Join-Path $rig 'bin') -ErrorAction Stop }
+  $exProfile = Get-Content -LiteralPath (Join-Path $PSScriptRoot "..\$Project\profile.json") -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
   $exProfile.root = $repo -replace '\\', '/'
   $exProfile.worktreeCopy = @('.env.local')
   $exProfile.nodeModulesJunction = $true
@@ -39,7 +40,7 @@ try {
 
   if ($p.nodeModulesJunction) { $before = (Get-ChildItem (Join-Path $root 'node_modules') -Force | Measure-Object).Count }
 
-  & "$rig\wt-new.ps1" $name
+  & "$rig\bin\wt-new.ps1" $name
   if (-not (Test-Path $wt)) { throw "wt-new.ps1 did not create $wt; stopping before the test writes anything under it" }
   Check (Test-Path $wt) 'worktree folder created'
   Check ($null -ne (git -C $root branch --list "worktree-$name")) 'branch created'
@@ -49,7 +50,7 @@ try {
 
   # Review Focus 4: reusing a name refuses and leaves the worktree alone
   $second = 'no error'
-  try { & "$rig\wt-new.ps1" $name } catch { $second = $_.Exception.Message }
+  try { & "$rig\bin\wt-new.ps1" $name } catch { $second = $_.Exception.Message }
   Check ($second -like '*already exists*') 'second wt-new with the same name refuses'
   Check ((Test-Path (Join-Path $wt '.git')) -and (git -C $wt rev-parse --abbrev-ref HEAD) -eq "worktree-$name") 'existing worktree untouched (still on its branch)'
 
@@ -60,12 +61,12 @@ try {
   [IO.File]::WriteAllText($active, '')
   $gitBefore = Get-ResumeState
   $resumed = 'ran'
-  try { & "$rig\wt-new.ps1" $name -Resume } catch { $resumed = $_.Exception.Message }
+  try { & "$rig\bin\wt-new.ps1" $name -Resume } catch { $resumed = $_.Exception.Message }
   Check ($resumed -eq 'ran') "-Resume of the existing worktree runs ($resumed)"
   Check ([IO.File]::ReadAllText($active) -eq $wt) '-Resume points active-worktree at the existing worktree'
   Check ((Get-ResumeState) -eq $gitBefore) '-Resume changed nothing in git (worktrees, branch, HEAD)'
   $unregistered = 'no error'
-  try { & "$rig\wt-new.ps1" "$name-none" -Resume } catch { $unregistered = $_.Exception.Message }
+  try { & "$rig\bin\wt-new.ps1" "$name-none" -Resume } catch { $unregistered = $_.Exception.Message }
   Check ($unregistered -like '*not a registered worktree*') '-Resume of a name with no worktree refuses'
   Check ([IO.File]::ReadAllText($active) -eq $wt) 'the refused -Resume left active-worktree alone'
 
@@ -75,14 +76,14 @@ try {
   New-Item -ItemType Directory $nm | Out-Null
   [IO.File]::WriteAllText((Join-Path $nm 'keep.txt'), 'x')
   $refused = 'no error'
-  try { & "$rig\wt-remove.ps1" $name } catch { $refused = $_.Exception.Message }
+  try { & "$rig\bin\wt-remove.ps1" $name } catch { $refused = $_.Exception.Message }
   Check ($refused -like '*real folder*') 'wt-remove refuses a real node_modules folder'
   Check (Test-Path (Join-Path $nm 'keep.txt')) 'the real folder was left alone'
   [IO.File]::Delete((Join-Path $nm 'keep.txt'))
   [IO.Directory]::Delete($nm)
   if ($p.nodeModulesJunction) { New-Item -ItemType Junction -Path $nm -Target (Join-Path $root 'node_modules') | Out-Null }
 
-  & "$rig\wt-remove.ps1" $name
+  & "$rig\bin\wt-remove.ps1" $name
   Check (-not (Test-Path $wt)) 'worktree folder removed'
   Check ($null -eq (git -C $root branch --list "worktree-$name")) "branch removed (it is part of origin/$($p.defaultBranch))"
   if ($p.nodeModulesJunction) {

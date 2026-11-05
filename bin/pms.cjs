@@ -3,12 +3,12 @@
 // The rig's one PMS script (the rig README, Safety rules): a project's PMS board, one ticket per call. The guard lets two seats run this
 // file, by its full path: the orchestrator reads the board and dry-runs writes, and pam, the PMS writer, also sends them with --live once
 // its brief says "Jas approved: post" (a role rule: the guard can't hear Jas). No worker runs it.
-//   node <rig>/pms.cjs --project <name> board                   columns and tickets
-//   node <rig>/pms.cjs --project <name> show <CODE>             one ticket and its comments
-//   node <rig>/pms.cjs --project <name> move <CODE> "<column>"
-//   node <rig>/pms.cjs --project <name> comment <CODE> <file>
-//   node <rig>/pms.cjs --project <name> create "<title>" <file> [--column "<column>"] [--code <CODE>] [--priority LOW|MEDIUM|HIGH|URGENT]
-//   node <rig>/pms.cjs --project <name> edit <CODE> [--title "<title>"] [--description <file>]
+//   node <rig>/bin/pms.cjs --project <name> board                   columns and tickets
+//   node <rig>/bin/pms.cjs --project <name> show <CODE>             one ticket and its comments
+//   node <rig>/bin/pms.cjs --project <name> move <CODE> "<column>"
+//   node <rig>/bin/pms.cjs --project <name> comment <CODE> <file>
+//   node <rig>/bin/pms.cjs --project <name> create "<title>" <file> [--column "<column>"] [--code <CODE>] [--priority LOW|MEDIUM|HIGH|URGENT]
+//   node <rig>/bin/pms.cjs --project <name> edit <CODE> [--title "<title>"] [--description <file>]
 // A write is a dry run unless --live is given: it prints the ticket's column, full description and every comment (a create: the board's
 // highest code and any title like the new one), then the method, path and JSON body, and sends nothing. --live sends exactly one write
 // request, no retry, appends one line to <rig>/<project>/work/pms-log.md, then reads the ticket back and prints PRESENT or MISSING per
@@ -21,9 +21,9 @@
 // API shapes from the reference PMS scripts, which worked against the real PMS.
 const fs = require('fs');
 const path = require('path');
-const { loadProfile } = require('./guard.cjs'); // profile.json reader: guard.cjs (loadProfile) is the one validator
+const { loadProfile } = require('../hooks/guard.cjs'); // profile.json reader: guard.cjs (loadProfile) is the one validator
 
-const RIG = __dirname; // the profiles, work folders and log sit next to this file (in the tests, a temp copy of the rig)
+const RIG = path.dirname(__dirname); // the rig: the profiles, work folders and log sit in the folder above this file's bin/ (in the tests, a temp copy of the rig)
 const ARITY = { board: 0, show: 1, move: 2, comment: 2, create: 2, edit: 1 };
 const WRITES = new Set(['move', 'comment', 'create', 'edit']);
 // The options that take a value, and the one verb each belongs to (--project: every verb).

@@ -15,12 +15,12 @@
   },
   "hooks": {
     "PreToolUse": [
-      { "matcher": "*", "hooks": [{ "type": "command", "command": "node {{RIG}}/guard.cjs --project example --seat checker || exit 2" }] }
+      { "matcher": "*", "hooks": [{ "type": "command", "command": "node {{RIG}}/hooks/guard.cjs --project example --seat checker || exit 2" }] }
     ],
     "SessionStart": [
-      { "matcher": "startup", "hooks": [{ "type": "command", "command": "node {{RIG}}/refocus.cjs --project example --seat angela" }, { "type": "command", "command": "node {{RIG}}/refocus.cjs --project example --seat angela --claude-md" }] },
-      { "matcher": "clear", "hooks": [{ "type": "command", "command": "node {{RIG}}/refocus.cjs --project example --seat angela" }, { "type": "command", "command": "node {{RIG}}/refocus.cjs --project example --seat angela --claude-md" }] },
-      { "matcher": "compact", "hooks": [{ "type": "command", "command": "node {{RIG}}/refocus.cjs --project example --seat angela" }, { "type": "command", "command": "node {{RIG}}/refocus.cjs --project example --seat angela --claude-md" }] }
+      { "matcher": "startup", "hooks": [{ "type": "command", "command": "node {{RIG}}/hooks/refocus.cjs --project example --seat angela" }, { "type": "command", "command": "node {{RIG}}/hooks/refocus.cjs --project example --seat angela --claude-md" }] },
+      { "matcher": "clear", "hooks": [{ "type": "command", "command": "node {{RIG}}/hooks/refocus.cjs --project example --seat angela" }, { "type": "command", "command": "node {{RIG}}/hooks/refocus.cjs --project example --seat angela --claude-md" }] },
+      { "matcher": "compact", "hooks": [{ "type": "command", "command": "node {{RIG}}/hooks/refocus.cjs --project example --seat angela" }, { "type": "command", "command": "node {{RIG}}/hooks/refocus.cjs --project example --seat angela --claude-md" }] }
     ]
   }
 }

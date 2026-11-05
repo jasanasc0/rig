@@ -1,13 +1,13 @@
 # close.selftest.ps1 - checks close.ps1 against a fake herdr in %TEMP%. The real herdr is never called: Jas's live rigs share its
 # server. Each run of close.ps1 gets a PATH of only the fake, node and Windows, and nothing runs if any other herdr is found on it. The
 # fake answers from a state file (herdr 0.8.2's JSON shapes), records every call and changes the state as herdr would. close.ps1 runs
-# from a temp rig: copies of it, herdr.ps1 and guard.cjs (next to this file), example's profile and a second project, sample, made from it.
-# Run: powershell -NoProfile -ExecutionPolicy Bypass -File <rig>\close.selftest.ps1   (about a minute: one case waits out the 30 s poll)
+# from a temp rig: copies of it, herdr.ps1 and guard.cjs (from bin\ and hooks\), example's profile and a second project, sample, made from it.
+# Run: powershell -NoProfile -ExecutionPolicy Bypass -File <rig>\test\close.selftest.ps1   (about a minute: one case waits out the 30 s poll)
 $ps = Join-Path $PSHOME 'powershell.exe'
 $node = (Get-Command node -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
 $tmp = Join-Path $env:TEMP ('rig-close-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
 $rig = Join-Path $tmp 'rig'
-$closePs1 = Join-Path $rig 'close.ps1'
+$closePs1 = Join-Path $rig 'bin\close.ps1'
 $fake = Join-Path $tmp 'bin'
 $stateFile = Join-Path $fake 'state.json'
 $callsFile = Join-Path $fake 'calls.log'
@@ -73,8 +73,9 @@ try {
   # The temp rig: close.ps1 and the guard as they are next to this file, example's profile, and sample's: example's with its name, root,
   # prefix and lanes changed (the guard checks both before close.ps1 reads a lane).
   New-Item -ItemType Directory (Join-Path $rig 'example'), (Join-Path $rig 'sample') | Out-Null
-  foreach ($f in 'close.ps1', 'herdr.ps1', 'guard.cjs') { Copy-Item -LiteralPath (Join-Path $PSScriptRoot $f) -Destination $rig -ErrorAction Stop }
-  $exProfile = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'example\profile.json'))
+  New-Item -ItemType Directory (Join-Path $rig 'bin'), (Join-Path $rig 'hooks') | Out-Null
+  foreach ($f in 'bin\close.ps1', 'bin\herdr.ps1', 'hooks\guard.cjs') { Copy-Item -LiteralPath (Join-Path $PSScriptRoot "..\$f") -Destination (Join-Path $rig $f) -ErrorAction Stop }
+  $exProfile = [IO.File]::ReadAllText((Join-Path $PSScriptRoot '..\example\profile.json'))
   [IO.File]::WriteAllText((Join-Path $rig 'example\profile.json'), $exProfile)
   [IO.File]::WriteAllText((Join-Path $rig 'sample\profile.json'), $exProfile.Replace('"example"', '"sample"').Replace('C:/example-project', 'C:/sample-project').Replace('"ex"', '"sm"').Replace('"ex-', '"sm-'))
   # The isolation itself: on the PATH close.ps1 gets, herdr is the fake and nothing else.

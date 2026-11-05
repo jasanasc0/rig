@@ -1,5 +1,5 @@
 'use strict';
-// Run: node <rig>/pms.test.cjs   (exit 1 on any miss)
+// Run: node <rig>/test/pms.test.cjs   (exit 1 on any miss)
 // The real pms.cjs, copied with guard.cjs (its profile validator) into a temp rig, against a fake PMS on 127.0.0.1 (port 0), with temp
 // profiles and temp env files that hold a made-up key: it never calls the real PMS. Every output pms.cjs prints is searched for that key.
 // pam build: edit with its undo file, create --code and --priority, the privacy filter, the duplicate-comment skip, the
@@ -141,15 +141,16 @@ const other = http.createServer((req, res) => {
     await new Promise((resolve) => other.listen(0, '127.0.0.1', resolve));
     const BASE = `http://127.0.0.1:${server.address().port}`;
     const ELSEWHERE = `http://127.0.0.1:${other.address().port}`;
-    for (const f of ['guard.cjs', 'pms.cjs']) {
+    for (const f of ['hooks/guard.cjs', 'bin/pms.cjs']) {
       try {
-        fs.copyFileSync(path.join(__dirname, f), path.join(tmp, f));
+        fs.mkdirSync(path.join(tmp, path.dirname(f)), { recursive: true });
+        fs.copyFileSync(path.join(__dirname, '..', f), path.join(tmp, f));
       } catch {} // a missing pms.cjs fails every check below instead of the suite
     }
     // The temp rig: a project per profile case, all with example's profile (prefix ex), a temp root and the pms field under test.
     const ROOT = path.join(tmp, 'root');
     fs.mkdirSync(ROOT);
-    const example = JSON.parse(fs.readFileSync(path.join(__dirname, 'example', 'profile.json'), 'utf8'));
+    const example = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'example', 'profile.json'), 'utf8'));
     const project = (name, pms, extra = {}) => {
       fs.mkdirSync(path.join(tmp, name, 'work'), { recursive: true });
       const p = { ...example, name, root: ROOT.replace(/\\/g, '/'), ...extra };
@@ -205,7 +206,7 @@ const other = http.createServer((req, res) => {
     const run = (args, cwd = ROOT) =>
       new Promise((resolve) => {
         state.reqs = [];
-        execFile(process.execPath, [path.join(tmp, 'pms.cjs'), ...args], { cwd, encoding: 'utf8', timeout: 60000, windowsHide: true }, (err, stdout, stderr) => {
+        execFile(process.execPath, [path.join(tmp, 'bin', 'pms.cjs'), ...args], { cwd, encoding: 'utf8', timeout: 60000, windowsHide: true }, (err, stdout, stderr) => {
           outputs.push(stdout, stderr);
           resolve({ status: err ? (typeof err.code === 'number' ? err.code : -1) : 0, stdout, stderr, out: stdout + stderr, reqs: state.reqs.slice() });
         });

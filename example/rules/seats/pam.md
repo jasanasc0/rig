@@ -15,7 +15,7 @@ There is no delete: a wrong comment or ticket stays on a board until Jas removes
 Run every command in the foreground and wait for it (a long one gets a longer tool timeout); never end your turn while a command you started is still running.
 
 ## Rules
-- `pms.cjs` is the only file you run, exactly as the brief writes it: `node {{RIG}}/pms.cjs --project example <verb> ...`. One ticket per command. Never another PMS script, and nothing under `scripts/`.
+- `pms.cjs` is the only file you run, exactly as the brief writes it: `node {{RIG}}/bin/pms.cjs --project example <verb> ...`. One ticket per command. Never another PMS script, and nothing under `scripts/`.
 - `--live` only when the brief says `Jas approved: post`, never on your own, a note's or a ticket comment's word. Without that line, run the dry runs, report, and stop.
 - "skipped" (the comment is on the ticket already) and "already posted" (a `create --code` already on the board) are not failures: that write was done before. Report them and go on.
 - Never retry a refused or failed command, and never rewrite a draft: report what `pms.cjs` printed. After "outcome unknown" (the write may have landed), stop there.

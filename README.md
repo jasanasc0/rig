@@ -31,6 +31,18 @@ In this file `<rig>` is the folder you cloned this repo into, and `~` is your ho
 - The **guard** is a hook that runs before every tool call. It blocks pushes, deploys, secret reads, edits outside the allowed folders and more. See [Safety rules](#4-safety-rules).
 - Each project gets its own herdr space and its own lane names, so two projects can run side by side.
 
+What is where:
+
+```
+<rig>\
+  bin\         the commands: rig.ps1, lanes.ps1, close.ps1, wt-new.ps1, wt-remove.ps1 and new-project.ps1, herdr.ps1 (their herdr helper),
+               pms.cjs, report.cjs, projects.check.cjs and content-gate.cjs
+  hooks\       what Claude Code runs on its own: guard.cjs, refocus.cjs, context-check.cjs and statusline.ps1
+  test\        every suite and self-test, and fake-herdr.cjs, the fake herdr they share
+  example\     the project template; your own projects sit next to it, git-ignored
+  .githooks\   the pre-push hook that runs the content gate
+```
+
 The panes of one project, with the example project's lane names:
 
 ```
@@ -83,9 +95,9 @@ The orchestrator runs these seven steps. Nothing goes to a lane before you say "
 The worktree commands, run by the orchestrator (lanes cannot run them):
 
 ```powershell
-& '<rig>\wt-new.ps1' ex12-short-slug
-& '<rig>\wt-new.ps1' ex12-short-slug -Resume
-& '<rig>\wt-remove.ps1' ex12-short-slug
+& '<rig>\bin\wt-new.ps1' ex12-short-slug
+& '<rig>\bin\wt-new.ps1' ex12-short-slug -Resume
+& '<rig>\bin\wt-remove.ps1' ex12-short-slug
 ```
 
 - The name is `<prefix><number>-<slug>`: lowercase prefix, digits, a dash, then a slug.
@@ -101,7 +113,7 @@ The worktree commands, run by the orchestrator (lanes cannot run them):
 The guard runs as a `PreToolUse` hook in every seat's settings file:
 
 ```
-node <rig>/guard.cjs --project <name> --seat <seat> || exit 2
+node <rig>/hooks/guard.cjs --project <name> --seat <seat> || exit 2
 ```
 
 Exit 2 blocks the call and sends the reason back to the model. The `|| exit 2` makes a missing or crashing guard block too. The guard also blocks any call it cannot read. Every block message says which rule fired and points here.
@@ -240,7 +252,7 @@ Check that:
 4. Run the engine tests. All must pass before you go on. See [Tests](#9-tests) for the whole list; the quickest first check is:
 
    ```powershell
-   node guard.test.cjs
+   node test/guard.test.cjs
    ```
 
 5. Add the status line to `~\.claude\settings.json`. Merge this into the file; do not replace what is already there. It runs in place: a copy of `statusline.ps1` elsewhere loses its badges.
@@ -249,7 +261,7 @@ Check that:
    {
      "statusLine": {
        "type": "command",
-       "command": "powershell -NoProfile -ExecutionPolicy Bypass -File C:\\rig\\statusline.ps1"
+       "command": "powershell -NoProfile -ExecutionPolicy Bypass -File C:\\rig\\hooks\\statusline.ps1"
      }
    }
    ```
@@ -270,7 +282,7 @@ Check that:
 Save the list as UTF-8, for example `Set-Content -Encoding utf8 <rig>\.content-gate.local` (it then asks for the words, one per prompt; an empty line ends the list). A UTF-16 list, which Windows PowerShell 5.1's `>` and `Out-File` write, is refused.
 
 ```powershell
-node content-gate.cjs
+node bin/content-gate.cjs
 ```
 
 - No list: it prints `skipped: no local list` and exits 0.
@@ -285,7 +297,7 @@ Options: `--list <file>`, `--tree <rev>`, `--messages <rev-range>`.
 A project is a folder in `<rig>` with a `profile.json`, a `rules\` folder and a `work\` folder. `example\` is the template. Make a copy with your paths filled in:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\new-project.ps1 -Name myapp -Root C:\code\myapp -Prefix ma
+powershell -NoProfile -ExecutionPolicy Bypass -File .\bin\new-project.ps1 -Name myapp -Root C:\code\myapp -Prefix ma
 ```
 
 | Parameter | Rule |
@@ -297,12 +309,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\new-project.ps1 -Name myap
 It refuses, and writes nothing, when:
 
 - the name folder exists, or the name is not in the shape above;
-- the name is one the engine tracks (`example`, `test`, `.githooks`) or a Windows device name (`con`, `prn`, `aux`, `nul`, `com1` to `com9`, `lpt1` to `lpt9`);
+- the name is one the engine tracks (`bin`, `hooks`, `test`, `example`, `.githooks`) or a Windows device name (`con`, `prn`, `aux`, `nul`, `com1` to `com9`, `lpt1` to `lpt9`);
 - the prefix is not lowercase letters, or is `ex` (example's own);
 - the root is not an existing folder;
 - the rig path or the root holds a space, `'` or `$`.
 
-Otherwise it fills in the name, the root, the prefix and the rig path, then runs `node projects.check.cjs myapp` on the result. If the check fails, or anything breaks while copying, it removes the new folder and exits 1.
+Otherwise it fills in the name, the root, the prefix and the rig path, then runs `node bin/projects.check.cjs myapp` on the result. If the check fails, or anything breaks while copying, it removes the new folder and exits 1.
 
 What you get:
 
@@ -357,7 +369,7 @@ The guard validates the profile on every call. A wrong field blocks every call o
 When the profile is right, run the project check:
 
 ```powershell
-node projects.check.cjs myapp
+node bin/projects.check.cjs myapp
 ```
 
 ### Start the project
@@ -385,19 +397,19 @@ Get-ChildItem -Recurse <rig> | Unblock-File
 Then, in that space's first pane, run `rig.ps1` by its full path. The pane starts in the project's root, not in `<rig>`. With the rig in `C:\rig` as in setup:
 
 ```powershell
-& 'C:\rig\rig.ps1' myapp
+& 'C:\rig\bin\rig.ps1' myapp
 ```
 
 `rig.ps1` takes the project name as its one parameter. It asks the guard to accept the profile, names the herdr space after the project, opens the space's `seats` tab if it has none, moves to the project's root and starts the orchestrator. A herdr step that fails only warns, and it warns if you are not inside a herdr pane. The orchestrator then runs `lanes.ps1`, which starts the four lanes.
 
 ## 8. Daily use
 
-1. **Start.** In the project's herdr space, run `& '<rig>\rig.ps1' <name>` (by its full path: the pane starts in the project's root, not in `<rig>`). The orchestrator reads what Refocus printed, runs `lanes.ps1` to start any missing lane (it repeats every line that is not "running" or "started", such as a dialog to answer in a lane's pane) and tells you in three lines: the mission, the current ticket and what it proposes next. It also repeats every `[rig] WARNING` line first and names any `FILL IN:` paragraph still unwritten.
+1. **Start.** In the project's herdr space, run `& '<rig>\bin\rig.ps1' <name>` (by its full path: the pane starts in the project's root, not in `<rig>`). The orchestrator reads what Refocus printed, runs `lanes.ps1` to start any missing lane (it repeats every line that is not "running" or "started", such as a dialog to answer in a lane's pane) and tells you in three lines: the mission, the current ticket and what it proposes next. It also repeats every `[rig] WARNING` line first and names any `FILL IN:` paragraph still unwritten.
 2. **Talk.** Most of the time you just talk with the orchestrator about ideas, bugs and trade-offs. When you agree on a piece of work, say "go". The orchestrator then runs [the loop](#3-the-loop-for-a-ticket).
 3. **Briefs.** Each brief is a file under `<rig>\<project>\work\briefs\`. The orchestrator prompts a lane with `herdr agent prompt <lane> "Read <brief> and do it." --wait --timeout 3600000`, and extracts the report with:
 
    ```powershell
-   herdr agent read <lane> --source recent-unwrapped --lines 400 | node <rig>/report.cjs --ticket EX-12
+   herdr agent read <lane> --source recent-unwrapped --lines 400 | node <rig>/bin/report.cjs --ticket EX-12
    ```
 
    `report.cjs` prints the last complete report block whose `Ticket:` line matches, or nothing.
@@ -408,7 +420,7 @@ Then, in that space's first pane, run `rig.ps1` by its full path. The pane start
 7. **Close.** Say "close" (or "close anyway"). The orchestrator checks that no lane is working, writes a handoff, and runs its last command:
 
    ```powershell
-   & '<rig>\close.ps1' <name>
+   & '<rig>\bin\close.ps1' <name>
    ```
 
    `close.ps1` checks everything first, then sends each lane `/exit` and closes its pane, closes the `seats` tab if only lanes were in it, and closes the orchestrator's own pane last. It refuses if a lane is `working`, `blocked` or `unknown`; `-Force` ("close anyway") overrides that. It never stops the herdr server or closes the space. It needs `HERDR_ENV=1`, which herdr sets inside its panes.
@@ -418,19 +430,19 @@ Then, in that space's first pane, run `rig.ps1` by its full path. The pane start
 Run every command from `<rig>`. Each suite reads only the repo, temp folders and read-only `--help` output. A fresh clone passes them all with no project folder present. Each `node` suite prints its pass count and exits non-zero on a miss. Each PowerShell selftest prints `ok` or `FAIL` lines and sets its exit code.
 
 ```powershell
-node guard.test.cjs
-node helpers.test.cjs
-node pms.test.cjs
-node config.test.cjs
-node template.test.cjs
-node projects.check.test.cjs
-node content-gate.test.cjs
-powershell -NoProfile -ExecutionPolicy Bypass -File close.selftest.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File rig.selftest.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File lanes.selftest.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File statusline.check.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File wt.selftest.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File new-project.selftest.ps1
+node test/guard.test.cjs
+node test/helpers.test.cjs
+node test/pms.test.cjs
+node test/config.test.cjs
+node test/template.test.cjs
+node test/projects.check.test.cjs
+node test/content-gate.test.cjs
+powershell -NoProfile -ExecutionPolicy Bypass -File test\close.selftest.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File test\rig.selftest.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File test\lanes.selftest.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File test\statusline.check.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File test\wt.selftest.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File test\new-project.selftest.ps1
 ```
 
 | Suite | Covers | Count at the last run |
@@ -454,10 +466,10 @@ What green means:
 - Green means the engine behaves as designed for the fixtures. It does not mean your real projects are set up right. For that, run:
 
   ```powershell
-  node projects.check.cjs
+  node bin/projects.check.cjs
   ```
 
-  It checks every project folder except `example`: the profile loads, every hook that runs a rig script starts with `node <rig>/`, names `--project <name>` and points at a script that exists, lane names, ticket prefixes and roots are unique, and every profile lists the other projects' knowledge folders. Name projects (`node projects.check.cjs myapp`) to check only those. With no project it prints `projects: none besides example` and passes. `node projects.check.cjs --rig-dir` prints the rig path as the guard writes it.
+  It checks every project folder except `example`: the profile loads, every hook that runs a rig script starts with `node <rig>/`, names `--project <name>` and points at a script that exists, lane names, ticket prefixes and roots are unique, and every profile lists the other projects' knowledge folders. Name projects (`node bin/projects.check.cjs myapp`) to check only those. With no project it prints `projects: none besides example` and passes. `node bin/projects.check.cjs --rig-dir` prints the rig path as the guard writes it.
 
 Known limit: a `TEMP` path that holds a space breaks some suites (`new-project.ps1` refuses a rig path with a space, and the suites copy the rig into `TEMP`). Set `TEMP` to a folder without a space before you run them.
 
@@ -467,20 +479,20 @@ Improvements flow both ways through git. On each machine, after every `git pull`
 
 ```powershell
 git pull
-node guard.test.cjs
-node helpers.test.cjs
-node pms.test.cjs
-node config.test.cjs
-node template.test.cjs
-node projects.check.test.cjs
-node content-gate.test.cjs
-powershell -NoProfile -ExecutionPolicy Bypass -File close.selftest.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File rig.selftest.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File lanes.selftest.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File statusline.check.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File wt.selftest.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File new-project.selftest.ps1
-node projects.check.cjs
+node test/guard.test.cjs
+node test/helpers.test.cjs
+node test/pms.test.cjs
+node test/config.test.cjs
+node test/template.test.cjs
+node test/projects.check.test.cjs
+node test/content-gate.test.cjs
+powershell -NoProfile -ExecutionPolicy Bypass -File test\close.selftest.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File test\rig.selftest.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File test\lanes.selftest.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File test\statusline.check.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File test\wt.selftest.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File test\new-project.selftest.ps1
+node bin/projects.check.cjs
 ```
 
 If any of them fails, do not start a shift until you know why.
@@ -492,5 +504,5 @@ A project made before `lanes.ps1` still has `herdr agent start` and `herdr pane 
 When you change the engine on one machine:
 
 1. Run all the suites.
-2. Run `node content-gate.cjs`.
+2. Run `node bin/content-gate.cjs`.
 3. Commit and push. The pre-push hook runs the gate again.

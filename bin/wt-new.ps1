@@ -1,6 +1,6 @@
 # wt-new.ps1 - create a ticket worktree for the rig (the rig README, The loop for a ticket). The orchestrator runs it; seats can't.
-# Usage: & '<rig>\wt-new.ps1' <prefix><n>-<slug>   (ex123-short-slug for the prefix ex)
-#        & '<rig>\wt-new.ps1' <prefix><n>-<slug> -Resume   (an existing ticket worktree becomes the coder's again)
+# Usage: & '<rig>\bin\wt-new.ps1' <prefix><n>-<slug>   (ex123-short-slug for the prefix ex)
+#        & '<rig>\bin\wt-new.ps1' <prefix><n>-<slug> -Resume   (an existing ticket worktree becomes the coder's again)
 # The project is the rig folder whose profile.json has that ticketPrefix: its root, default branch, files to copy, node_modules junction
 # and active-worktree file come from there. Everything that can stop it is checked before git changes anything.
 param(
@@ -11,7 +11,8 @@ param(
   # active-worktree points at it, as after a new one.
   [switch]$Resume
 )
-$rig = $PSScriptRoot
+# The rig is the folder above this script's bin\.
+$rig = Split-Path -Parent $PSScriptRoot
 # profile.json reader: guard.cjs (loadProfile) is the one validator; keep the find-by-prefix/root and slash-normalising (-replace) lines identical in rig.ps1, wt-new.ps1, wt-remove.ps1, wt.selftest.ps1 and statusline.ps1, and add no rule here.
 $projects = @(Get-ChildItem -LiteralPath $rig -Directory | Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName 'profile.json') } | ForEach-Object {
   $file = Join-Path $_.FullName 'profile.json'

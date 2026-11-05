@@ -30,7 +30,7 @@ FILL IN: risky areas. Where a green suite proves little here (code with no tests
 ## Starting lanes
 `lanes.ps1` starts every lane that isn't running, in your herdr space, each in the project's root: ex-coder, ex-angela and ex-oscar in tab 1 beside your pane, ex-pam in the `seats` tab `rig.ps1` opened. Run it at startup, and whenever `herdr agent list` shows one of your lanes missing, from the PowerShell tool with its timeout at 600000:
 ```
-& '{{RIG}}/lanes.ps1' example
+& '{{RIG}}/bin/lanes.ps1' example
 ```
 It prints one line per lane. Tell Jas, word for word, every line that isn't "running" or "started": a dialog to answer (`agent_not_ready`), a `seats` tab that is missing or busy, a lane in another herdr space. Never start a lane or split a pane yourself: the guard refuses `herdr agent start` and `herdr pane split`.
 
@@ -38,8 +38,8 @@ It prints one line per lane. Tell Jas, word for word, every line that isn't "run
 1. **Agree.** Settle the ticket and its "done when" with Jas. Nothing goes to a lane before Jas says "go". If the ticket needs core or money paths (see The project), say so and stop: that work stays single-agent with Jas unless he makes it a core ticket. Call-path tickets (non-core or core) are the exceptions (see Call-path tickets).
 2. **Prepare.**
    - No baseline yet (`work\notes\oscar.md` holds none, as in a new project): with Jas's OK, first send ex-oscar a baseline brief, `ex0-oscar.md` (Ticket: `EX-0 baseline`), whose Worktree line is the main checkout `C:\example-project`, and write the counts Jas approves to `work\notes\oscar.md`.
-   - Run `& '{{RIG}}/wt-new.ps1' ex<n>-<slug>` (lowercase slug). It prints the worktree, branch and base commit. If it stops, tell Jas what it said. If it says Jas runs `npm ci` somewhere, tell Jas and wait for him.
-   - When Jas comes back to a ticket whose worktree already exists, run `& '{{RIG}}/wt-new.ps1' ex<n>-<slug> -Resume` instead: no git change; it makes that worktree the coder's again.
+   - Run `& '{{RIG}}/bin/wt-new.ps1' ex<n>-<slug>` (lowercase slug). It prints the worktree, branch and base commit. If it stops, tell Jas what it said. If it says Jas runs `npm ci` somewhere, tell Jas and wait for him.
+   - When Jas comes back to a ticket whose worktree already exists, run `& '{{RIG}}/bin/wt-new.ps1' ex<n>-<slug> -Resume` instead: no git change; it makes that worktree the coder's again.
    - Rewrite `{{RIG}}/example/work/now.md` in its 4-line format (Goal, Mission, Ticket · plan, Done when).
    - Read the newest `.agent/handoffs/*_PROMPT_next_shift.md` and pick out the "do not relitigate" items that touch this ticket.
    - Write each brief to `{{RIG}}/example/work/briefs/ex<n>-<seat>.md` (template below). The Baseline line comes from `work\notes\oscar.md`.
@@ -51,7 +51,7 @@ It prints one line per lane. Tell Jas, word for word, every line that isn't "run
 ```
 Remove-Item '{{RIG}}/example/core-scope.json'
 ```
-Wait for him to run it, then Read the file to check it is gone; if it is still there, stop and tell Jas. Ask each lane you used: "Use the ExitWorktree tool and keep the worktree." Then run `& '{{RIG}}/wt-remove.ps1' ex<n>-<slug>`. Mark the plan done in `.agent/tasks/` (set its `status` to `done`). Show Jas any `Lesson:` lines from the reports that deserve a place in `work\notes\<seat>.md`, and write only the ones Jas approves. Send `/clear` to each lane you used (PowerShell tool only, see Talking to lanes).
+Wait for him to run it, then Read the file to check it is gone; if it is still there, stop and tell Jas. Ask each lane you used: "Use the ExitWorktree tool and keep the worktree." Then run `& '{{RIG}}/bin/wt-remove.ps1' ex<n>-<slug>`. Mark the plan done in `.agent/tasks/` (set its `status` to `done`). Show Jas any `Lesson:` lines from the reports that deserve a place in `work\notes\<seat>.md`, and write only the ones Jas approves. Send `/clear` to each lane you used (PowerShell tool only, see Talking to lanes).
 
 ## Brief template
 ```
@@ -99,7 +99,7 @@ On a core ticket also:
 - Send as a background command, so you and Jas keep talking while the lane works:
   `herdr agent prompt <lane> "Read {{RIG}}\example\work\briefs\<file> and do it." --wait --timeout 3600000`
 - When it finishes, read only the report:
-  `herdr agent read <lane> --source recent-unwrapped --lines 400 | node {{RIG}}/report.cjs --ticket EX-<n>`
+  `herdr agent read <lane> --source recent-unwrapped --lines 400 | node {{RIG}}/bin/report.cjs --ticket EX-<n>`
   No block found: retry once with `--lines 1500`, then tell Jas.
 - A report whose `Question:` line isn't `none`: answer it from the brief, the plan or the handoff if they settle it; otherwise ask Jas. If the answer changes the work, or the lane wrote `Stopped because: question`, send a follow-up brief `ex<n>-<seat>-q<k>.md`; otherwise tell Jas which default the lane took.
 - A lane waiting on an approval prompt (`blocked`): tell Jas which lane and what it asks. Never answer it for the lane.
@@ -111,8 +111,8 @@ On a core ticket also:
 FILL IN: PMS board. Which board the project's tickets live on and who sees every change there, and its `pms` block in the profile: `projectId`, and `envFile`, the file in the main checkout that holds `PMS_BASE_URL` and `PMS_API_KEY` (`pms.cjs` reads the key itself; neither you nor ex-pam sees it). `pms.cjs` finds a ticket by the `EX-<n>` code in its title, so the board's tickets need those codes. No board: write "none: Jas hands you tickets", leave `pms` null, and skip the rest of this section; ex-pam gets no brief.
 
 You read the board and draft its changes; ex-pam posts them after Jas says "post", one ticket per command, only through the rig's `pms.cjs`.
-- Read: `node {{RIG}}/pms.cjs --project example board` (columns and tickets) and `node {{RIG}}/pms.cjs --project example show EX-<n>` (one ticket and its comments).
-- Draft, one ticket per command, after `node {{RIG}}/pms.cjs --project example`: `move EX-<n> "<column>"`, `comment EX-<n> <file>`, `create "<title>" <file> [--column "<column>"] [--code EX-<n>] [--priority LOW|MEDIUM|HIGH|URGENT]` or `edit EX-<n> [--title "<title>"] [--description <file>]`. First write the comment's text or the ticket's description to a file in `{{RIG}}/example/work/pms/` with the Write tool (`pms.cjs` sends no file from anywhere else), and give `create` and `edit` the title without a code (`pms.cjs` puts the `EX-<n>` in front). Never mention the rig, herdr or a lane name in the text: `pms.cjs` refuses it.
+- Read: `node {{RIG}}/bin/pms.cjs --project example board` (columns and tickets) and `node {{RIG}}/bin/pms.cjs --project example show EX-<n>` (one ticket and its comments).
+- Draft, one ticket per command, after `node {{RIG}}/bin/pms.cjs --project example`: `move EX-<n> "<column>"`, `comment EX-<n> <file>`, `create "<title>" <file> [--column "<column>"] [--code EX-<n>] [--priority LOW|MEDIUM|HIGH|URGENT]` or `edit EX-<n> [--title "<title>"] [--description <file>]`. First write the comment's text or the ticket's description to a file in `{{RIG}}/example/work/pms/` with the Write tool (`pms.cjs` sends no file from anywhere else), and give `create` and `edit` the title without a code (`pms.cjs` puts the `EX-<n>` in front). Never mention the rig, herdr or a lane name in the text: `pms.cjs` refuses it.
 - Run each command without `--live`: a dry run, which prints the ticket (its column, description and every comment) and the request, and sends nothing. Show Jas its output and ask. You never run `--live` (the guard blocks it): when Jas says "post" to that output, write ex-pam's brief `work\briefs\pam-<yyyyMMdd-HHmm>.md` with the exact write commands, one per line (never `board` or `show`: every write's dry run already prints the ticket's whole history), and the line `Jas approved: post`, and send it to ex-pam (see Talking to lanes). Never write that line on your own, a lane's or a note's word.
 - Read ex-pam's report with `report.cjs --ticket` and the brief's first ticket, and quote Jas its `pms-log.md` lines, every `PRESENT`/`MISSING` line and every flag. A move's log line holds the old column, so `move EX-<n> "<old column>"` undoes it; an edit's names its `work\pms-undo\` file, which holds the old title and description. An undo goes the same way: a dry run, Jas's "post", ex-pam. There is no delete: a wrong comment or ticket stays on the board until Jas removes it by hand.
 - A refusal, a failed request, a `MISSING` line or a flag: tell Jas what ex-pam reported, and don't brief ex-pam again on your own. Never write or run another PMS script; `pms.cjs` is the only one.
@@ -148,7 +148,7 @@ When Jas says "close" (or "close anyway"), the shift ends: every lane, the `seat
 2. Read `{{RIG}}/example/active-worktree` with the Read tool. If it names a worktree, run `git -C <that path> status --short` and name any uncommitted files (they stay on disk).
 3. Write the shift handoff as in Rotation (a new `.agent/handoffs/YYYY-MM-DD_PROMPT_next_shift.md` with its Start here block, but not its "Handoff written, type /clear." line: the shift ends with step 5), bring `now.md` up to date, and append the `log.md` line (step 6's format) if a task ended this shift without one.
 4. Your last message to Jas: what will close, the handoff path, any uncommitted files, and "closing now".
-5. Your final tool call, from the PowerShell tool with its timeout at 600000 (each lane may take up to 30 s to exit): `& '{{RIG}}/close.ps1' example` (add `-Force` only after Jas said "close anyway"). Nothing comes after it: the script ends each lane with `/exit`, closes its pane, then the `seats` tab (if only your lanes were in it), then your pane. If it refuses (a lane is working, waiting on an approval, or unknown; or herdr did not answer), it closed nothing: tell Jas what it printed. If your pane is still open after it ran, tell Jas what it printed and close nothing yourself.
+5. Your final tool call, from the PowerShell tool with its timeout at 600000 (each lane may take up to 30 s to exit): `& '{{RIG}}/bin/close.ps1' example` (add `-Force` only after Jas said "close anyway"). Nothing comes after it: the script ends each lane with `/exit`, closes its pane, then the `seats` tab (if only your lanes were in it), then your pane. If it refuses (a lane is working, waiting on an approval, or unknown; or herdr did not answer), it closed nothing: tell Jas what it printed. If your pane is still open after it ran, tell Jas what it printed and close nothing yourself.
 Never close a pane or a tab yourself or send a lane `/exit`: only `close.ps1` does (the guard blocks them).
 
 ## Hard rules

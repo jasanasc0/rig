@@ -5,8 +5,8 @@
 # in a child powershell with a PATH of only the fakes, node and Windows. Before every run the test checks that this PATH finds herdr and
 # claude only as the fakes, and runs nothing if not; the stub guard, which rig.ps1 asks before any herdr call or claude, refuses unless the
 # child's PATH is that one. The fake herdr is the rig's fake-herdr.cjs, shared by every self-test.
-# Run: powershell -NoProfile -ExecutionPolicy Bypass -File <rig>\rig.selftest.ps1
-$rigPs1 = Join-Path $PSScriptRoot 'rig.ps1'
+# Run: powershell -NoProfile -ExecutionPolicy Bypass -File <rig>\test\rig.selftest.ps1
+$rigPs1 = Join-Path $PSScriptRoot '..\bin\rig.ps1'
 $ps = Join-Path $PSHOME 'powershell.exe'
 $node = (Get-Command node -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
 $tmp = Join-Path $env:TEMP ('rig-seats-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
@@ -64,7 +64,7 @@ function Invoke-Rig($state, $project, [switch]$NoHerdrEnv) {
       if ($found.Count -ne 1 -or $found[0] -ne (Join-Path $fake "$name.cmd")) { throw "the test PATH finds $name at '$($found -join "', '")', not only the fake; nothing was run" }
     }
     $env:HERDR_ENV = $(if ($NoHerdrEnv) { $null } else { '1' })
-    $out = @(& $ps -NoProfile -ExecutionPolicy Bypass -File (Join-Path $rig 'rig.ps1') $project 2>&1 | ForEach-Object { "$_" })
+    $out = @(& $ps -NoProfile -ExecutionPolicy Bypass -File (Join-Path $rig 'bin\rig.ps1') $project 2>&1 | ForEach-Object { "$_" })
     $code = $LASTEXITCODE
   } finally { $env:PATH = $saved.PATH; $env:HERDR_ENV = $saved.HERDR_ENV }
   $text = $out -join "`n"
@@ -90,17 +90,17 @@ try {
   Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'fake-herdr.cjs') -Destination $fake # the rig's one fake herdr
   [IO.File]::WriteAllText((Join-Path $fake 'fake-claude.cjs'), $fakeClaude)
   foreach ($name in 'herdr', 'claude') { [IO.File]::WriteAllText((Join-Path $fake "$name.cmd"), "@`"$node`" `"%~dp0fake-$name.cjs`" %*`r`n@exit /b %ERRORLEVEL%`r`n") }
-  # The test rig: rig.ps1 as it is (it finds its rig by $PSScriptRoot, so the copy runs on this folder), herdr.ps1, the stub guard, and
+  # The test rig: rig.ps1 as it is (it finds its rig above its own folder, so the copy in bin\ runs on this folder), herdr.ps1, the stub guard, and
   # each project's profile (root: a temp folder) and the two orchestrator files rig.ps1 checks for.
   $text = [IO.File]::ReadAllText($rigPs1)
-  if ([regex]::Matches($text, '(?m)^\$rig = \$PSScriptRoot\r?$').Count -ne 1) { throw 'rig.ps1 has no single line $rig = $PSScriptRoot, so its copy would not run on the test rig; nothing was run' }
-  New-Item -ItemType Directory $rig | Out-Null
-  [IO.File]::WriteAllText((Join-Path $rig 'rig.ps1'), $text)
-  [IO.File]::WriteAllText((Join-Path $rig 'guard.cjs'), $stubGuard)
-  Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'herdr.ps1') -Destination $rig # rig.ps1 dot-sources Invoke-Herdr from its rig folder
+  if ([regex]::Matches($text, '(?m)^\$rig = Split-Path -Parent \$PSScriptRoot\r?$').Count -ne 1) { throw 'rig.ps1 has no single line $rig = Split-Path -Parent $PSScriptRoot, so its copy would not run on the test rig; nothing was run' }
+  New-Item -ItemType Directory $rig, (Join-Path $rig 'bin'), (Join-Path $rig 'hooks') | Out-Null
+  [IO.File]::WriteAllText((Join-Path $rig 'bin\rig.ps1'), $text)
+  [IO.File]::WriteAllText((Join-Path $rig 'hooks\guard.cjs'), $stubGuard)
+  Copy-Item -LiteralPath (Join-Path $PSScriptRoot '..\bin\herdr.ps1') -Destination (Join-Path $rig 'bin') # rig.ps1 dot-sources Invoke-Herdr from its rig folder
   foreach ($project in 'example', 'sample') {
     New-Item -ItemType Directory (Join-Path $rig "$project\rules"), $roots[$project] | Out-Null
-    $p = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'example\profile.json') -Raw | ConvertFrom-Json
+    $p = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\example\profile.json') -Raw | ConvertFrom-Json
     if ($project -eq 'sample') {
       $p.name = 'sample'; $p.ticketPrefix = 'sm'; $p.projectSettings = $true
       foreach ($seat in 'orchestrator', 'coder', 'angela', 'oscar', 'pam') { $p.lanes.$seat = "sm-$seat" }

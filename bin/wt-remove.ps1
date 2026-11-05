@@ -1,12 +1,13 @@
 # wt-remove.ps1 - remove a ticket worktree after Jas merges (the rig README, The loop for a ticket). The orchestrator runs it; seats can't.
-# Usage: & '<rig>\wt-remove.ps1' <prefix><n>-<slug>   (ex123-short-slug for the prefix ex)
+# Usage: & '<rig>\bin\wt-remove.ps1' <prefix><n>-<slug>   (ex123-short-slug for the prefix ex)
 # The project is the rig folder whose profile.json has that ticketPrefix (see wt-new.ps1).
 param(
   [Parameter(Mandatory = $true)]
   [ValidatePattern('^[a-z]+\d+-[a-z0-9][a-z0-9-]*$')]
   [string]$Name
 )
-$rig = $PSScriptRoot
+# The rig is the folder above this script's bin\.
+$rig = Split-Path -Parent $PSScriptRoot
 # profile.json reader: guard.cjs (loadProfile) is the one validator; keep the find-by-prefix/root and slash-normalising (-replace) lines identical in rig.ps1, wt-new.ps1, wt-remove.ps1, wt.selftest.ps1 and statusline.ps1, and add no rule here.
 $projects = @(Get-ChildItem -LiteralPath $rig -Directory | Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName 'profile.json') } | ForEach-Object {
   $file = Join-Path $_.FullName 'profile.json'

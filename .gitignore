@@ -1,8 +1,10 @@
 # Only the engine is tracked: every top-level folder is ignored except these.
 /*/
+!/bin/
+!/hooks/
+!/test/
 !/example/
 !/.githooks/
-!/test/
 
 # Working state
 */work/now.md

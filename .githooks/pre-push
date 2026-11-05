@@ -7,7 +7,7 @@ while read -r lref lsha rref rsha; do
   commits=$(git rev-list "$range") || exit 1
   for c in $commits; do
     # </dev/null: the loop's stdin holds the remaining ref lines
-    node "$root/content-gate.cjs" --tree "$c" --messages "$c^!" </dev/null || exit 1
+    node "$root/bin/content-gate.cjs" --tree "$c" --messages "$c^!" </dev/null || exit 1
   done
 done
 exit 0

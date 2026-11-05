@@ -1,4 +1,4 @@
-# Self-check for statusline.ps1 (next to this file). Run: powershell -NoProfile -ExecutionPolicy Bypass -File <rig>\statusline.check.ps1
+# Self-check for hooks\statusline.ps1. Run: powershell -NoProfile -ExecutionPolicy Bypass -File <rig>\test\statusline.check.ps1
 # A fake Claude folder and a fake rig folder in %TEMP% (removed in finally), and sample stdin. The fake rig holds a copy of statusline.ps1,
 # which takes the rig as its own folder, example's profile and settings from this repo, and a second project, sample, made from them.
 # Cases A-J are the v3 check's; K-T add the second project's lanes and the project rules of v4; U and V the fix wave's; W and X pam's
@@ -7,7 +7,7 @@ $ErrorActionPreference = 'Stop'
 # The script under test writes UTF-8 (the shield is an emoji); read its output as UTF-8 too, whatever console this check runs from
 # (from Git Bash the default is the OEM code page, and the shield would be missed).
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
-$here = $PSScriptRoot
+$here = Split-Path -Parent $PSScriptRoot # the rig: this test is in <rig>\test\
 $fake = Join-Path ([IO.Path]::GetTempPath()) ('rig-statusline-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
 $saved = @{ CLAUDE_CONFIG_DIR = $env:CLAUDE_CONFIG_DIR; APPDATA = $env:APPDATA; PONYTAIL_DEFAULT_MODE = $env:PONYTAIL_DEFAULT_MODE }
 $fails = 0
@@ -27,9 +27,10 @@ try {
     $aw = Join-Path $rig 'example\active-worktree'
     $pgAw = Join-Path $rig 'sample\active-worktree'
 
-    # The script under test, unchanged, in the fake rig: it finds the profiles next to itself.
-    $script = Join-Path $rig 'statusline.ps1'
-    Copy-Item -LiteralPath (Join-Path $here 'statusline.ps1') -Destination $script
+    # The script under test, unchanged, in the fake rig: it finds the profiles above its folder.
+    $script = Join-Path $rig 'hooks\statusline.ps1'
+    New-Item -ItemType Directory -Force (Join-Path $rig 'hooks') | Out-Null
+    Copy-Item -LiteralPath (Join-Path $here 'hooks\statusline.ps1') -Destination $script
 
     $E = [char]27
     $color = @{ GITNEXUS = '38;5;75'; SUPERPOWERS = '38;5;141'; PONYTAIL = '38;5;108'; ADHD = '38;5;216' }

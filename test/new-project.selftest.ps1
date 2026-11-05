@@ -1,8 +1,8 @@
 # new-project.selftest.ps1 - checks new-project.ps1 on temp copies of the rig and temp roots only (never this rig's own folders).
-# Run: powershell -NoProfile -File <rig>\new-project.selftest.ps1   (exit 1 on any FAIL)
+# Run: powershell -NoProfile -File <rig>\test\new-project.selftest.ps1   (exit 1 on any FAIL)
 # shortcut: a TEMP path with a space makes the good run a refusal (new-project.ps1 refuses a rig path with a space); set TEMP to a folder
 # without one to run this selftest on such a machine.
-$src = $PSScriptRoot
+$src = Split-Path -Parent $PSScriptRoot # the rig: this test is in <rig>\test\
 $tmp = Join-Path ([IO.Path]::GetTempPath()) ('new-project-selftest-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
 [void](New-Item -ItemType Directory -Path $tmp)
 $script:fails = 0
@@ -10,14 +10,15 @@ function Check($ok, $label) { if ($ok) { "ok   $label" } else { "FAIL $label"; $
 # A temp rig: the files new-project.ps1 needs (with the hook scripts projects.check.cjs looks for), and the template.
 function New-Rig($dir) {
   [void](New-Item -ItemType Directory -Path $dir)
-  foreach ($f in 'guard.cjs', 'refocus.cjs', 'context-check.cjs', 'projects.check.cjs', 'new-project.ps1', '.gitignore') { Copy-Item -LiteralPath (Join-Path $src $f) -Destination $dir }
+  [void](New-Item -ItemType Directory -Path (Join-Path $dir 'bin'), (Join-Path $dir 'hooks'))
+  foreach ($f in 'hooks\guard.cjs', 'hooks\refocus.cjs', 'hooks\context-check.cjs', 'bin\projects.check.cjs', 'bin\new-project.ps1', '.gitignore') { Copy-Item -LiteralPath (Join-Path $src $f) -Destination (Join-Path $dir $f) }
   Copy-Item -LiteralPath (Join-Path $src 'example') -Destination (Join-Path $dir 'example') -Recurse
   $dir
 }
 function New-Dir($name) { (New-Item -ItemType Directory -Path (Join-Path $tmp $name)).FullName }
 # Runs new-project.ps1 as Jas would, in its own powershell; its output lines land in $script:out, and the exit code is returned.
 function New-Project($rig, $name, $root, $prefix) {
-  $script:out = @(& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $rig 'new-project.ps1') -Name $name -Root $root -Prefix $prefix 2>&1 | ForEach-Object { "$_" })
+  $script:out = @(& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $rig 'bin\new-project.ps1') -Name $name -Root $root -Prefix $prefix 2>&1 | ForEach-Object { "$_" })
   $LASTEXITCODE
 }
 # Every folder under the temp folder, and every file with its size and time: equal before and after means nothing was written. (Not a
@@ -32,9 +33,9 @@ $code = New-Project $rig 'home-app' $rootA 'ha'
 $proj = Join-Path $rig 'home-app'
 Check ($code -eq 0 -and ($script:out -join "`n") -cmatch '(?m)^projects: 1 checked$' -and -not (($script:out -join "`n") -cmatch '(?m)^FAIL')) "a good run exits 0 and its projects.check run passes (exit $code)"
 if ($code -ne 0) { $script:out }
-& node (Join-Path $rig 'projects.check.cjs') | Out-Null
+& node (Join-Path $rig 'bin\projects.check.cjs') | Out-Null
 Check ($LASTEXITCODE -eq 0) 'projects.check.cjs with no name passes on the new project too'
-$rigDir = [string](& node (Join-Path $rig 'projects.check.cjs') --rig-dir)
+$rigDir = [string](& node (Join-Path $rig 'bin\projects.check.cjs') --rig-dir)
 $files = @(Get-ChildItem -LiteralPath $proj -Recurse -File -Force -ErrorAction SilentlyContinue)
 $text = ($files | ForEach-Object { [IO.File]::ReadAllText($_.FullName) }) -join "`n"
 Check ($files.Count -gt 0 -and -not $text.Contains('{{')) 'no {{RIG}} (and no other {{...}} placeholder) is left in the new project'
@@ -43,7 +44,7 @@ Check ($files.Count -gt 0 -and $text -notmatch '\bex(?=[0-9<-])|"ex"') 'no ex pr
 $p = Get-Content -LiteralPath (Join-Path $proj 'profile.json') -Raw -ErrorAction SilentlyContinue | ConvertFrom-Json
 Check ($p.name -ceq 'home-app' -and $p.ticketPrefix -ceq 'ha' -and $p.root -ceq ($rootA -replace '\\', '/') -and $p.lanes.orchestrator -ceq 'ha-orchestrator' -and $p.lanes.coder -ceq 'ha-coder' -and $p.lanes.pam -ceq 'ha-pam') 'the profile holds the name, the prefix, the root with forward slashes and the ha-<seat> lanes'
 $orch = '' + (Get-Content -LiteralPath (Join-Path $proj 'rules\orchestrator.md') -Raw -Encoding UTF8 -ErrorAction SilentlyContinue)
-$want = @('rig for the project home-app', 'HA-<n>', 'HA-0', 'ha<n>-<slug>', 'ha0-oscar.md', 'ha-coder', "& '$rigDir/lanes.ps1' home-app", "Worktree: $rootA\.claude\worktrees\ha<n>-<slug>", "$rigDir/home-app/profile.json", "& '$rigDir/wt-new.ps1'")
+$want = @('rig for the project home-app', 'HA-<n>', 'HA-0', 'ha<n>-<slug>', 'ha0-oscar.md', 'ha-coder', "& '$rigDir/bin/lanes.ps1' home-app", "Worktree: $rootA\.claude\worktrees\ha<n>-<slug>", "$rigDir/home-app/profile.json", "& '$rigDir/bin/wt-new.ps1'")
 $missing = @($want | Where-Object { -not $orch.Contains($_) })
 Check ($rigDir -and $missing.Count -eq 0) "orchestrator.md names the project, its codes, worktrees, lanes, lanes.ps1 line, root (backslashes) and rig folder (missing: $($missing -join ' | '))"
 $ex = Join-Path $rig 'example'
@@ -60,7 +61,7 @@ $rootB = New-Dir 'root-ex-1-example-project'
 $code = New-Project $rig 'ex-example' $rootB 'et'
 $p = Get-Content -LiteralPath (Join-Path $rig 'ex-example\profile.json') -Raw -ErrorAction SilentlyContinue | ConvertFrom-Json
 $orch = '' + (Get-Content -LiteralPath (Join-Path $rig 'ex-example\rules\orchestrator.md') -Raw -Encoding UTF8 -ErrorAction SilentlyContinue)
-Check ($code -eq 0 -and $p.name -ceq 'ex-example' -and $p.root -ceq ($rootB -replace '\\', '/') -and $p.lanes.coder -ceq 'et-coder' -and $orch.Contains('rig for the project ex-example') -and $orch.Contains("Worktree: $rootB\.claude\worktrees\et<n>-<slug>") -and $orch.Contains("& '$rigDir/lanes.ps1' ex-example")) "a name ex-example and a root ...\root-ex-1-example-project come out whole (exit $code)"
+Check ($code -eq 0 -and $p.name -ceq 'ex-example' -and $p.root -ceq ($rootB -replace '\\', '/') -and $p.lanes.coder -ceq 'et-coder' -and $orch.Contains('rig for the project ex-example') -and $orch.Contains("Worktree: $rootB\.claude\worktrees\et<n>-<slug>") -and $orch.Contains("& '$rigDir/bin/lanes.ps1' ex-example")) "a name ex-example and a root ...\root-ex-1-example-project come out whole (exit $code)"
 
 # 2. Each refusal: one line, exit 1, nothing written anywhere under the temp folder.
 $aFile = Join-Path $tmp 'a-file.txt'
@@ -124,10 +125,10 @@ $cp = [Console]::OutputEncoding
 $forced = 'console code page 437'
 try { [Console]::OutputEncoding = [Text.Encoding]::GetEncoding(437) } catch { $forced = "console code page left as it was: $($_.Exception.Message)" }
 try { $code = New-Project $eRig 'home-app' $rootE 'ha' } finally { try { [Console]::OutputEncoding = $cp } catch {} }
-& node (Join-Path $eRig 'projects.check.cjs') | Out-Null
+& node (Join-Path $eRig 'bin\projects.check.cjs') | Out-Null
 $checkCode = $LASTEXITCODE
 $settings = '' + (Get-Content -LiteralPath (Join-Path $eRig 'home-app\rules\coder.settings.json') -Raw -Encoding UTF8 -ErrorAction SilentlyContinue)
-Check ($code -eq 0 -and $checkCode -eq 0 -and $settings.Contains('/rig-' + [char]0x00E9 + '/guard.cjs --project home-app')) "a rig folder rig-e-acute comes through whole ($forced; exit $code, projects.check exit $checkCode)"
+Check ($code -eq 0 -and $checkCode -eq 0 -and $settings.Contains('/rig-' + [char]0x00E9 + '/hooks/guard.cjs --project home-app')) "a rig folder rig-e-acute comes through whole ($forced; exit $code, projects.check exit $checkCode)"
 
 Remove-Item -LiteralPath $tmp -Recurse -Force
 if ($script:fails) { "$($script:fails) check(s) failed"; exit 1 }

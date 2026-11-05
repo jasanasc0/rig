@@ -1,13 +1,13 @@
 'use strict';
-// Run: node <rig>/template.test.cjs   (exit 1 on any miss)
+// Run: node <rig>/test/template.test.cjs   (exit 1 on any miss)
 // Checks example/, the project template new-project.ps1 copies (and the guard tests' fixture): its shared seat section, its one
 // placeholder, its settings hooks and its lanes.ps1 line against the guard, its FILL IN paragraphs and the content gate's local word list.
 const fs = require('fs');
 const path = require('path');
-const { decide, RIG_DIR } = require('./guard.cjs');
-const { loadList, scan } = require('./content-gate.cjs');
+const { decide, RIG_DIR } = require('../hooks/guard.cjs');
+const { loadList, scan } = require('../bin/content-gate.cjs');
 
-const EX = path.join(__dirname, 'example');
+const EX = path.join(__dirname, '..', 'example');
 const RULES = path.join(EX, 'rules');
 
 let total = 0;
@@ -31,7 +31,7 @@ const exampleFiles = () =>
   (fs.existsSync(EX) ? fs.readdirSync(EX, { recursive: true }) : [])
     .map((rel) => path.join(EX, rel))
     .filter((f) => fs.statSync(f).isFile())
-    .map((f) => ({ path: path.relative(__dirname, f).replace(/\\/g, '/'), text: fs.readFileSync(f, 'utf8') }));
+    .map((f) => ({ path: path.relative(path.join(__dirname, '..'), f).replace(/\\/g, '/'), text: fs.readFileSync(f, 'utf8') }));
 
 // 1. The shared section: from its heading to the next ## heading (or the end of the file).
 const SEATS = ['coder', 'angela', 'oscar', 'pam'];
@@ -72,12 +72,12 @@ const hookProblems = Object.entries(GUARD_SEAT).flatMap(([seat, guardSeat]) => {
   } catch (e) {
     return [`${seat}.settings.json does not parse (${e.message})`];
   }
-  const want = `node ${RIG_DIR}/guard.cjs --project example --seat ${guardSeat} || exit 2`;
+  const want = `node ${RIG_DIR}/hooks/guard.cjs --project example --seat ${guardSeat} || exit 2`;
   const pre = ((s.hooks || {}).PreToolUse || []).flatMap((m) => (m.hooks || []).map((h) => [m.matcher, h.command]));
   return pre.length === 1 && pre[0][0] === '*' && pre[0][1] === want ? [] : [`${seat}: ${JSON.stringify(pre)}`];
 });
 check(
-  'with {{RIG}} replaced by RIG_DIR, every settings file\'s guard hook is node <RIG_DIR>/guard.cjs --project example --seat <seat> || exit 2',
+  'with {{RIG}} replaced by RIG_DIR, every settings file\'s guard hook is node <RIG_DIR>/hooks/guard.cjs --project example --seat <seat> || exit 2',
   hookProblems.length === 0,
   hookProblems.join('; ')
 );
@@ -90,7 +90,7 @@ const lanesLines = roleLines.filter((l) => l.startsWith("& '") && l.includes('la
 const lanesVerdict = lanesLines.length === 1 ? decide({ seat: 'orchestrator', tool_name: 'PowerShell', tool_input: { command: lanesLines[0] }, cwd: 'C:\\example-project' }, {}) : null;
 check(
   "orchestrator.md starts the lanes with one lanes.ps1 line the guard lets example's orchestrator run, and holds no herdr agent start or pane split line",
-  lanesLines.length === 1 && lanesLines[0] === `& '${RIG_DIR}/lanes.ps1' example` && lanesVerdict !== null && lanesVerdict.allow === true && !roleLines.some((l) => /^herdr (?:agent start|pane split) /.test(l)),
+  lanesLines.length === 1 && lanesLines[0] === `& '${RIG_DIR}/bin/lanes.ps1' example` && lanesVerdict !== null && lanesVerdict.allow === true && !roleLines.some((l) => /^herdr (?:agent start|pane split) /.test(l)),
   `${lanesLines.length} lanes.ps1 line(s): ${lanesLines.join(' | ') || 'none'}; guard: ${lanesVerdict ? JSON.stringify(lanesVerdict).slice(0, 160) : 'not asked'}`
 );
 
@@ -106,7 +106,7 @@ const missing = Object.entries(FILL_IN).flatMap(([rel, topics]) => {
 check('orchestrator.md and the coder seat each hold the FILL IN paragraphs the spec lists', missing.length === 0, 'missing: ' + missing.join(', '));
 
 // 6. The content gate's local list (git-ignored; a fresh clone has none). Only the places are printed, never the words.
-const words = loadList(path.join(__dirname, '.content-gate.local'));
+const words = loadList(path.join(__dirname, '..', '.content-gate.local'));
 if (!words) console.log('template: content check skipped: no local list');
 else {
   const hits = scan({ words, files, messages: [] });

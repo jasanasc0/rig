@@ -1,13 +1,13 @@
 'use strict';
-// Run: node content-gate.test.cjs   (exit 1 on any miss)
+// Run: node test/content-gate.test.cjs   (exit 1 on any miss)
 // Temp git repos and temp word lists only; the words here are made up.
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
-const ROOT = __dirname;
-const GATE = path.join(ROOT, 'content-gate.cjs');
+const ROOT = path.dirname(__dirname); // the repo: this test is in test/
+const GATE = path.join(ROOT, 'bin', 'content-gate.cjs');
 const HOOK = path.join(ROOT, '.githooks', 'pre-push');
 
 let total = 0;
@@ -33,7 +33,8 @@ function makeRepo(files, msg, list) {
   git(dir, 'config', 'user.email', 't@example.com');
   git(dir, 'config', 'user.name', 't');
   git(dir, 'config', 'core.autocrlf', 'false');
-  fs.copyFileSync(GATE, path.join(dir, 'content-gate.cjs'));
+  fs.mkdirSync(path.join(dir, 'bin'));
+  fs.copyFileSync(GATE, path.join(dir, 'bin', 'content-gate.cjs'));
   fs.mkdirSync(path.join(dir, '.githooks'));
   fs.copyFileSync(HOOK, path.join(dir, '.githooks', 'pre-push'));
   if (list !== undefined) fs.writeFileSync(path.join(dir, '.content-gate.local'), list);
@@ -52,7 +53,7 @@ function commit(dir, files, msg, ...extra) {
 }
 
 function gate(dir, ...args) {
-  return spawnSync('node', [path.join(dir, 'content-gate.cjs'), ...args], { cwd: dir, encoding: 'utf8' });
+  return spawnSync('node', [path.join(dir, 'bin', 'content-gate.cjs'), ...args], { cwd: dir, encoding: 'utf8' });
 }
 
 // no list

@@ -5,7 +5,7 @@
 # gives every pane ($env:HERDR_ENV, HERDR_PANE_ID, HERDR_TAB_ID, HERDR_WORKSPACE_ID). Before every run the test checks that this PATH finds
 # herdr only as the fake, and runs nothing if not; the stub guard, which lanes.ps1 asks before any herdr call, refuses unless the child's
 # PATH is that one.
-# Run: powershell -NoProfile -ExecutionPolicy Bypass -File <rig>\lanes.selftest.ps1
+# Run: powershell -NoProfile -ExecutionPolicy Bypass -File <rig>\test\lanes.selftest.ps1
 $ps = Join-Path $PSHOME 'powershell.exe'
 $node = (Get-Command node -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
 $tmp = Join-Path $env:TEMP ('rig-lanes-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
@@ -91,7 +91,7 @@ function Invoke-Lanes($state, $project, $pane = 'w1:p1', $tab = 'w1:t1', [switch
     $env:HERDR_WORKSPACE_ID = $pane.Split(':')[0]
     # -DotSource: lanes.ps1 dot-sourced into the child's own shell (a refusal caught there), which then says whether any of its helpers is
     # still defined there.
-    $run = if ($DotSource) { @('-Command', "try { . '$(Join-Path $rig 'lanes.ps1')' $project } catch { 'caught: ' + `$_ }; 'leaked: ' + [bool](Get-Command Invoke-Herdr, Start-Lane, ClaudeArgs -ErrorAction SilentlyContinue)") } else { @('-File', (Join-Path $rig 'lanes.ps1'), $project) }
+    $run = if ($DotSource) { @('-Command', "try { . '$(Join-Path $rig 'bin\lanes.ps1')' $project } catch { 'caught: ' + `$_ }; 'leaked: ' + [bool](Get-Command Invoke-Herdr, Start-Lane, ClaudeArgs -ErrorAction SilentlyContinue)") } else { @('-File', (Join-Path $rig 'bin\lanes.ps1'), $project) }
     $out = @(& $ps -NoProfile -ExecutionPolicy Bypass @run 2>&1 | ForEach-Object { "$_" })
     $code = $LASTEXITCODE
   } finally { foreach ($n in $names) { [Environment]::SetEnvironmentVariable($n, $saved[$n], 'Process') } }
@@ -120,11 +120,12 @@ try {
   [IO.File]::WriteAllText((Join-Path $fake 'herdr.cmd'), "@`"$node`" `"%~dp0fake-herdr.cjs`" %*`r`n@exit /b %ERRORLEVEL%`r`n")
   # The test rig: lanes.ps1 and herdr.ps1 as they are, the stub guard, and each project's profile (root: a temp folder with a blank).
   New-Item -ItemType Directory $rig | Out-Null
-  foreach ($f in 'lanes.ps1', 'herdr.ps1') { if (Test-Path -LiteralPath (Join-Path $PSScriptRoot $f)) { Copy-Item -LiteralPath (Join-Path $PSScriptRoot $f) -Destination $rig } }
-  [IO.File]::WriteAllText((Join-Path $rig 'guard.cjs'), $stubGuard)
+  New-Item -ItemType Directory (Join-Path $rig 'bin'), (Join-Path $rig 'hooks') | Out-Null
+  foreach ($f in 'lanes.ps1', 'herdr.ps1') { if (Test-Path -LiteralPath (Join-Path $PSScriptRoot "..\bin\$f")) { Copy-Item -LiteralPath (Join-Path $PSScriptRoot "..\bin\$f") -Destination (Join-Path $rig 'bin') } }
+  [IO.File]::WriteAllText((Join-Path $rig 'hooks\guard.cjs'), $stubGuard)
   foreach ($project in 'example', 'sample') {
     New-Item -ItemType Directory (Join-Path $rig "$project\rules"), $roots[$project] | Out-Null
-    $p = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'example\profile.json') -Raw | ConvertFrom-Json
+    $p = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\example\profile.json') -Raw | ConvertFrom-Json
     if ($project -eq 'sample') {
       $p.name = 'sample'; $p.ticketPrefix = 'sm'; $p.projectSettings = $true
       foreach ($seat in 'orchestrator', 'coder', 'angela', 'oscar', 'pam') { $p.lanes.$seat = "sm-$seat" }

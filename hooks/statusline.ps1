@@ -1,7 +1,7 @@
 # Combined statusline: dev info (dir/branch/model/context/cost) + plugin pills + rig lane info.
 # statusLine is a single command, so everything is emitted from here.
-# It runs in place, as <rig>\statusline.ps1 (the statusLine command in ~\.claude\settings.json names it), and finds the project
-# profiles next to itself. Check: powershell -NoProfile -ExecutionPolicy Bypass -File <rig>\statusline.check.ps1
+# It runs in place, as <rig>\hooks\statusline.ps1 (the statusLine command in ~\.claude\settings.json names it), and finds the project
+# profiles in the folder above its own (<rig>). Check: powershell -NoProfile -ExecutionPolicy Bypass -File <rig>\test\statusline.check.ps1
 $ClaudeDir = if ($env:CLAUDE_CONFIG_DIR) { $env:CLAUDE_CONFIG_DIR } else { Join-Path $HOME ".claude" }
 # Bars use U+2588/U+2591; PS 5.1 defaults stdout to the OEM codepage, which mangles them.
 # No-BOM UTF8 so the preamble doesn't leak into the statusline text.
@@ -12,7 +12,7 @@ $badgeParts = @()
 
 # Rig lanes (herdr): every <rig>\<project>\profile.json names a project's root and its five lanes (pam since the pam build). A session whose
 # name is one of a project's lanes and whose folder is under that project's root is that project's lane (rig v4).
-$RigDir = $PSScriptRoot
+$RigDir = Split-Path -Parent $PSScriptRoot # the rig: this file is in <rig>\hooks\
 $Seats = @('orchestrator', 'coder', 'angela', 'oscar', 'pam')
 $Dot = [char]0x00B7
 $Shield = [char]::ConvertFromUtf32(0x1F6E1) + [char]0xFE0F

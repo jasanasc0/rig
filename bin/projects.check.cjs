@@ -1,15 +1,15 @@
 'use strict';
-// Run: node <rig>/projects.check.cjs [<name>...]   (exit 1 on any FAIL)
+// Run: node <rig>/bin/projects.check.cjs [<name>...]   (exit 1 on any FAIL)
 // Checks this machine's real projects, the <rig>/<name>/ folders next to example/ that new-project.ps1 makes (git ignores them, so the
 // engine suites, which test example only, never see them). Each named project, or with no name every project folder but example:
 // its profile loads, each settings file's guard hook names this rig, the project and the seat, and every hook of any event that runs a
 // rig script (guard, Refocus, the rotation check) runs this rig's copy, which is there, for this project. Across the named projects and every
 // other project here: no two share a lane name, a ticket prefix or a root (nor is one root inside another), example included, and
 // every profile's knowledgeDirs names every project's knowledge folders, so each project's lanes keep their hands off the others'.
-// node <rig>/projects.check.cjs --rig-dir prints the rig folder as the guard writes it (RIG_DIR), for new-project.ps1's {{RIG}}.
+// node <rig>/bin/projects.check.cjs --rig-dir prints the rig folder as the guard writes it (RIG_DIR), for new-project.ps1's {{RIG}}.
 const fs = require('fs');
 const path = require('path');
-const { loadProfile, RIG_DIR } = require('./guard.cjs');
+const { loadProfile, RIG_DIR } = require('../hooks/guard.cjs');
 
 if (process.argv[2] === '--rig-dir') {
   console.log(RIG_DIR);
@@ -24,8 +24,8 @@ const readJson = (file) => {
   }
 };
 const here = fs
-  .readdirSync(__dirname, { withFileTypes: true })
-  .filter((d) => d.isDirectory() && d.name !== 'example' && fs.existsSync(path.join(__dirname, d.name, 'profile.json')))
+  .readdirSync(RIG_DIR, { withFileTypes: true })
+  .filter((d) => d.isDirectory() && d.name !== 'example' && fs.existsSync(path.join(RIG_DIR, d.name, 'profile.json')))
   .map((d) => d.name);
 const named = process.argv.slice(2);
 const checked = named.length ? named : here;
@@ -44,7 +44,7 @@ const report = (label, problems) => {
 // every hook that runs a rig script. A settings file still naming an old rig folder, another project or a script that is gone would
 // run that copy, or nothing, unnoticed: each such hook is its own FAIL line.
 const GUARD_SEAT = { orchestrator: 'orchestrator', coder: 'coder', angela: 'checker', oscar: 'checker', pam: 'pam' };
-const HOOK_SCRIPTS = ['guard.cjs', 'refocus.cjs', 'context-check.cjs']; // the rig scripts a settings file's hooks run
+const HOOK_SCRIPTS = ['guard.cjs', 'refocus.cjs', 'context-check.cjs']; // the rig scripts a settings file's hooks run, all in <rig>/hooks/
 const loaded = [];
 for (const name of checked) {
   try {
@@ -55,14 +55,14 @@ for (const name of checked) {
   }
   loaded.push(name);
   report(`${name}: the profile loads`, []);
-  const settings = Object.keys(GUARD_SEAT).map((file) => [file, readJson(path.join(__dirname, name, 'rules', file + '.settings.json'))]);
+  const settings = Object.keys(GUARD_SEAT).map((file) => [file, readJson(path.join(RIG_DIR, name, 'rules', file + '.settings.json'))]);
   const problems = settings.flatMap(([file, s]) => {
     if (s === null) return [`${file}.settings.json is missing or not JSON`];
-    const want = `node ${RIG_DIR}/guard.cjs --project ${name} --seat ${GUARD_SEAT[file]} || exit 2`;
+    const want = `node ${RIG_DIR}/hooks/guard.cjs --project ${name} --seat ${GUARD_SEAT[file]} || exit 2`;
     const pre = ((s.hooks || {}).PreToolUse || []).flatMap((m) => (m.hooks || []).map((h) => [m.matcher, h.command]));
     return pre.length === 1 && pre[0][0] === '*' && pre[0][1] === want ? [] : [`${file}: ${JSON.stringify(pre)}`];
   });
-  report(`${name}: every settings file's guard hook is node ${RIG_DIR}/guard.cjs --project ${name} --seat <seat> || exit 2`, problems);
+  report(`${name}: every settings file's guard hook is node ${RIG_DIR}/hooks/guard.cjs --project ${name} --seat <seat> || exit 2`, problems);
   // A hook runs a rig script when its command is node <script> and the script is under RIG_DIR or is one of HOOK_SCRIPTS anywhere.
   // (name passed loadProfile, so it is letters, digits and - only: safe in the pattern as it is.)
   const hooks = settings.flatMap(([file, s]) =>
@@ -77,7 +77,7 @@ for (const name of checked) {
     const why = [];
     if (!cmd.startsWith(`node ${RIG_DIR}/`)) why.push(`it does not start with node ${RIG_DIR}/`);
     if (!new RegExp(`(?:^|\\s)--project\\s+${name}(?=\\s|$)`).test(cmd)) why.push(`it does not name --project ${name}`);
-    const target = ours ? script : `${RIG_DIR}/${base}`;
+    const target = ours ? script : `${RIG_DIR}/hooks/${base}`;
     if (!fs.existsSync(target)) why.push(`${target} is missing`);
     if (why.length) {
       wrong++;
@@ -91,7 +91,7 @@ for (const name of checked) {
 // one worktree name to two projects, or make one folder two projects' checkout. A profile.json that doesn't parse is left out here (its
 // own check above fails). example's lanes, prefix and root count too: wt-new.ps1 and wt-remove.ps1 find a project by its ticket prefix
 // among every rig folder with a profile.json, example included. Its knowledgeDirs are the template's, not a project's, so check 3 skips it.
-const withProfile = (names) => names.map((name) => [name, readJson(path.join(__dirname, name, 'profile.json'))]).filter(([, p]) => p && typeof p === 'object');
+const withProfile = (names) => names.map((name) => [name, readJson(path.join(RIG_DIR, name, 'profile.json'))]).filter(([, p]) => p && typeof p === 'object');
 const profiles = withProfile([...new Set([...loaded, ...here])].filter((name) => name !== 'example'));
 const clashInputs = [...profiles, ...withProfile(['example'])];
 const clashes = [];

@@ -1,13 +1,14 @@
-# rig.ps1 - start a project's orchestrator lane (the rig README, Daily use). Run inside herdr: & '<rig>\rig.ps1' <project>
+# rig.ps1 - start a project's orchestrator lane (the rig README, Daily use). Run inside herdr: & '<rig>\bin\rig.ps1' <project>
 # The project is any rig folder with a profile.json (new-project.ps1 makes one); the guard checks that profile before Claude starts.
 param([Parameter(Mandatory = $true)][string]$Project)
-$rig = $PSScriptRoot
+# The rig is the folder above this script's bin\.
+$rig = Split-Path -Parent $PSScriptRoot
 $profileFile = Join-Path $rig "$Project\profile.json"
 if ($Project -cnotmatch '^[a-z0-9][a-z0-9-]*$' -or -not (Test-Path -LiteralPath $profileFile -PathType Leaf)) {
   throw "No project '$Project': there is no $profileFile. A project is a rig folder with a profile.json."
 }
 # The guard refuses every call of a project whose profile is wrong; ask it once now (a harmless Read) so that shows here, not in the lane.
-'{"tool_name":"Read","tool_input":{"file_path":"README.md"}}' | node "$rig\guard.cjs" --project $Project --seat orchestrator
+'{"tool_name":"Read","tool_input":{"file_path":"README.md"}}' | node "$rig\hooks\guard.cjs" --project $Project --seat orchestrator
 if ($LASTEXITCODE -ne 0) { throw "The guard refuses $profileFile (its reason is above); fix the profile first." }
 foreach ($f in "$rig\$Project\rules\orchestrator.settings.json", "$rig\$Project\rules\orchestrator.md") {
   if (-not (Test-Path -LiteralPath $f -PathType Leaf)) { throw "$f is missing: a project needs its rules folder (new-project.ps1 copies it from example). Claude was not started." }
@@ -16,7 +17,7 @@ foreach ($f in "$rig\$Project\rules\orchestrator.settings.json", "$rig\$Project\
 $p = Get-Content -LiteralPath $profileFile -Raw | ConvertFrom-Json
 $root = $p.root -replace '/', '\'
 # Invoke-Herdr: one herdr call, its result and what herdr answered (herdr.ps1, shared with lanes.ps1 and close.ps1).
-. "$rig\herdr.ps1"
+. "$PSScriptRoot\herdr.ps1"
 if ($env:HERDR_ENV -ne '1') { Write-Warning 'Not inside a herdr pane: the orchestrator will not be able to open lanes. Start herdr first.' }
 else {
   # The seats build (the rig README, Daily use): name this herdr space after the project and open its seats tab, before Claude starts. A herdr

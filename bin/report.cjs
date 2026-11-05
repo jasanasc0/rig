@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 // Prints only the last complete report block from a lane's screen (the rig README, The loop for a ticket).
-// Usage: herdr agent read <seat> --source recent-unwrapped --lines 400 | node <rig>/report.cjs --ticket EX-<n>
+// Usage: herdr agent read <seat> --source recent-unwrapped --lines 400 | node <rig>/bin/report.cjs --ticket EX-<n>
 const START = /^[\s●⏺•*>|-]*=== REPORT ===\s*$/;
 const END = /^[\s●⏺•*>|-]*=== END ===\s*$/;
 

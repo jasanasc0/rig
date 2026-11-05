@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 // Rig guard: PreToolUse hook that blocks the tool calls the rig README's "Safety rules" forbid.
-// Settings entry: node <rig>/guard.cjs --project <name> --seat <orchestrator|coder|checker|pam> || exit 2
+// Settings entry: node <rig>/hooks/guard.cjs --project <name> --seat <orchestrator|coder|checker|pam> || exit 2
 // Exit 0 allows the call. Exit 2 blocks it, and stderr goes back to the model. The `|| exit 2` makes a missing or crashed
 // guard block too: without it the shell's exit 127 or 1 is an error Claude Code carries on past.
 // Jas's core scope (<rig>/<project>/core-scope.json, the core-scope build) opens the core paths it lists to the coder's Edit and Write in one
@@ -10,11 +10,11 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-// This machine's values: its home folder, and the rig, the folder that holds this file. HOME and RIG are as norm() writes paths (norm
+// This machine's values: its home folder, and the rig, the folder above this file's hooks/. HOME and RIG are as norm() writes paths (norm
 // itself reads HOME); RIG_DIR keeps the folder's case as on disk, as the settings and lane start commands write it. Everything that
 // differs per project comes from <rig>/<project>/profile.json (loadProfile below).
 const HOME = path.posix.normalize(os.homedir().replace(/\\/g, '/')).toLowerCase().replace(/\/+$/, '');
-const RIG_DIR = fs.realpathSync.native(__dirname).replace(/\\/g, '/');
+const RIG_DIR = fs.realpathSync.native(path.dirname(__dirname)).replace(/\\/g, '/'); // this file is in <rig>/hooks/
 const RIG = norm(RIG_DIR);
 const SHARED_TEMP = HOME + '/appdata/local/temp/claude/'; // Claude's scratchpad, writable for every orchestrator
 // Where software is installed, which no seat may write (the holes build: herdr's and the Obsidian CLI's own binaries run from here by path):
@@ -155,7 +155,7 @@ function loadProfile(name) {
   if (typeof name !== 'string' || !PROJECT_NAME.test(name)) throw new Error(`"${name}" is not a project name (lowercase letters, digits and -)`);
   const cached = PROFILES.get(name);
   if (cached) return cached;
-  const file = path.join(__dirname, name, 'profile.json').replace(/\\/g, '/');
+  const file = path.join(__dirname, '..', name, 'profile.json').replace(/\\/g, '/');
   let raw;
   try {
     raw = fs.readFileSync(file, 'utf8');
@@ -216,7 +216,7 @@ function loadProfile(name) {
     mainKnowledge: new RegExp(rootRe + SEP + String.raw`(?:${dirs})\.*(?![\w.-])`, 'i'),
     boardRun: p.boardScript ? new RegExp(String.raw`^\s*node\s+(?:\.[\\/])?` + p.boardScript.split('/').map(escapeRe).join('[\\\\/]') + String.raw`\s*$`, 'i') : null,
     runPaths,
-    pms: p.pms ?? null, // read by <rig>/pms.cjs, not by the guard
+    pms: p.pms ?? null, // read by <rig>/bin/pms.cjs, not by the guard
     scriptsMsg: `running ${name} scripts/ is blocked` + (p.boardScript ? ` (the orchestrator may run node ${p.boardScript} only)` : ''),
     // W6: the files the orchestrator may run through an interpreter or launcher. Everything else it writes would run outside the guard
     // with Jas's permissions, and it has no other file to run.
@@ -224,7 +224,7 @@ function loadProfile(name) {
       `the orchestrator runs only its ${runPaths.length === 8 ? 'eight' : 'seven'} named scripts (${p.boardScript ? `${name} ${p.boardScript} and ` : ''}the rig pms.cjs, report.cjs, refocus.cjs, wt-new.ps1, wt-remove.ps1, lanes.ps1, close.ps1); ` +
       'a script it writes would run outside the guard with Jas’s permissions. Read files with Read/Grep, write with Write/Edit, or report what you need',
     // pam's one file (pam build): the rig's pms.cjs, for its own project.
-    pamScriptMsg: `pam runs only the rig's pms.cjs (node ${RIG_DIR}/pms.cjs --project ${name} <verb> ..., as the brief writes it); any other script would run outside the guard with Jas’s permissions. Report what you need`,
+    pamScriptMsg: `pam runs only the rig's pms.cjs (node ${RIG_DIR}/bin/pms.cjs --project ${name} <verb> ..., as the brief writes it); any other script would run outside the guard with Jas’s permissions. Report what you need`,
   };
   PROFILES.set(name, P);
   return P;
@@ -473,7 +473,7 @@ const driveSpelled = (p) => `(?:${escapeRe(p[0])}:|/${escapeRe(p[0])})` + SEP + 
 const USER_DIR = String.raw`(?:${driveSpelled(HOME)}|~|\$\{?(?:env:)?(?:home|userprofile)\}?)`;
 // A normalized path in every spelling a shell accepts: under the home folder through USER_DIR as well (a project's root, the rig).
 const spelled = (p) => (p.startsWith(HOME + '/') ? USER_DIR + SEP + segments(p.slice(HOME.length + 1)) : driveSpelled(p));
-// The rig folder with one \ or / between its segments, for the powershell -File <rig>\wt-new.ps1 form.
+// The rig folder with one \ or / between its segments, for the powershell -File <rig>\bin\wt-new.ps1 form.
 const RIG_FILE = RIG.split('/').map(escapeRe).join('[\\\\/]');
 // A null target (redirects and curl/wget output there write nothing).
 const NULL_TARGET = String.raw`(?:\/dev\/null|\$null|nul)(?![\w.])`;
@@ -494,8 +494,8 @@ const RE = {
   // that runs would hide one.
   wrappers: /\b(?:invoke-expression|iex)\b|-encodedcommand\b|scriptblock\]::create\b|\binvokecommand\.(?:invokescript|newscriptblock|expandstring)\b|processstartinfo|diagnostics\.process\]::start|(?<![\w.-])(?:bash|sh|zsh|dash|ksh)(?:\.exe)?["']?\s+(?:-[\w-]+(?:[=\s]+[^\s-]\S*)?\s+)*-(?=[a-z]*c)[a-z]+\b|(?<![\w.-])cmd(?:\.exe)?["']?\s+(?:\/\/?[a-z](?::\w+)?\s+)*\/\/?[ck]\b/i,
   nestedPowershell: /\b(?:powershell|pwsh)(?:\.exe)?\b/i,
-  rigScriptFile: new RegExp(String.raw`^\s*(?:powershell|pwsh)(?:\.exe)?\s+(?:-noprofile\s+)?-file\s+["']?` + RIG_FILE + String.raw`[\\/](?:wt-new|wt-remove)\.ps1["']?(?:\s+([\w-]+))?\s*$`, 'i'),
-  rigScript: new RegExp(RIG_FILE + String.raw`[\\/](?:wt-new|wt-remove)\.ps1`, 'i'),
+  rigScriptFile: new RegExp(String.raw`^\s*(?:powershell|pwsh)(?:\.exe)?\s+(?:-noprofile\s+)?-file\s+["']?` + RIG_FILE + String.raw`[\\/]bin[\\/](?:wt-new|wt-remove)\.ps1["']?(?:\s+([\w-]+))?\s*$`, 'i'),
+  rigScript: new RegExp(RIG_FILE + String.raw`[\\/]bin[\\/](?:wt-new|wt-remove)\.ps1`, 'i'),
   // git push in any form: quoted/full-path git.exe invocations and `git subtree push`.
   push: new RegExp(String.raw`\bgit(?:\.exe)?['"]?` + GIT_OPTS + String.raw`(?:${HS}subtree)?${HS}push\b`, 'i'),
   gitWrite: gitSub(
@@ -694,8 +694,8 @@ const RE = {
 // call's cwd) is exactly one of them, whatever its file name or spelling. pms.cjs (v4 add-on) is the orchestrator's one way to its
 // project's PMS board; what it may send is pms.cjs's own business. close.ps1 (the close build) ends its shift, and lanes.ps1 (the lean
 // build) starts its lanes.
-const RIG_SCRIPTS = ['pms.cjs', 'report.cjs', 'refocus.cjs', 'wt-new.ps1', 'wt-remove.ps1', 'lanes.ps1', 'close.ps1'].map((f) => RIG + '/' + f);
-const PMS_SCRIPT = RIG + '/pms.cjs';
+const RIG_SCRIPTS = ['bin/pms.cjs', 'bin/report.cjs', 'hooks/refocus.cjs', 'bin/wt-new.ps1', 'bin/wt-remove.ps1', 'bin/lanes.ps1', 'bin/close.ps1'].map((f) => RIG + '/' + f);
+const PMS_SCRIPT = RIG + '/bin/pms.cjs';
 const SCRIPT_EXT = /\.(?:ps1|bat|cmd|cjs|mjs|js|py|sh)$/i;
 const NODE_LOAD_OPT = /^(?:-r|--require|--import|--loader|--experimental-loader)(?:=([\s\S]*))?$/;
 
@@ -1017,7 +1017,7 @@ const tabCreateRefused = (P) =>
 // with its flags, its own project's settings file (and so its guard) and the layout; the orchestrator runs that script, never the herdr
 // commands, so no start command or split value has to be read here.
 const lanesRefused = (P, what) =>
-  `herdr ${what} is not allowed: lanes.ps1 starts the lanes. Run & '${RIG_WIN}\\lanes.ps1' ${P.name} from the PowerShell ` +
+  `herdr ${what} is not allowed: lanes.ps1 starts the lanes. Run & '${RIG_WIN}\\bin\\lanes.ps1' ${P.name} from the PowerShell ` +
   `tool (timeout 600000): it starts only the missing ones and says why one can't start. ${herdrList(P)}`;
 
 // What is wrong with one herdr command at a command position: the whole block reason, or '' when the orchestrator may run it. `words`
@@ -1120,7 +1120,7 @@ function checkUpload(cmd) {
 // A worktree script (wt-new.ps1, wt-remove.ps1) run by the orchestrator also has to be given exactly one ticket name with its own project's
 // prefix (ex12-x for a project with the prefix ex): the script picks the project from that prefix, and a new worktree becomes that project's
 // coder fence, so another project's worktrees stay with its own orchestrator.
-const WT_SCRIPTS = [RIG + '/wt-new.ps1', RIG + '/wt-remove.ps1'];
+const WT_SCRIPTS = [RIG + '/bin/wt-new.ps1', RIG + '/bin/wt-remove.ps1'];
 const RIG_WIN = RIG_DIR.replace(/\//g, '\\'); // as the block reasons show the rig scripts' & lines
 // Field note 4: wt-new.ps1 also takes -Resume (once, before or after the name; PowerShell reads a switch name in any case), which makes an
 // existing ticket worktree the coder's again without a git change. Only the & (or . or bare-path) call passes `resumeOk`.
@@ -1130,7 +1130,7 @@ function worktreeNameDenied(words, P, resumeOk = false) {
   if (name.length === 1 && P.worktreeName.test(unquote(name[0]))) return '';
   return (
     `wt-new.ps1 and wt-remove.ps1 take exactly one ticket name of this project, ${P.ticketPrefix}<n>-<slug> in lowercase, written out plainly: ` +
-    `& '${RIG_WIN}\\wt-new.ps1' ${P.ticketPrefix}12-short-slug (wt-new.ps1 also takes -Resume after the name, for an existing ticket worktree). ` +
+    `& '${RIG_WIN}\\bin\\wt-new.ps1' ${P.ticketPrefix}12-short-slug (wt-new.ps1 also takes -Resume after the name, for an existing ticket worktree). ` +
     "Another project's worktrees belong to its own orchestrator"
   );
 }
@@ -1138,29 +1138,29 @@ function worktreeNameDenied(words, P, resumeOk = false) {
 // in the orchestrator's herdr space; it holds the herdr closes the orchestrator itself may not run (pane close, tab close, an /exit prompt).
 // So the orchestrator's call names exactly its own project, written out plainly, plus -Force (once, in any case: PowerShell reads a switch
 // name in any case) when Jas said "close anyway"; words the guard can't all read (`opaque`) could hold another argument, so they refuse too.
-// Only the & (or bare-path) run gets here: a dot-source is refused (dotSourced) and powershell -File <rig>\close.ps1 stays a nested-powershell block.
-const CLOSE_SCRIPT = RIG + '/close.ps1';
+// Only the & (or bare-path) run gets here: a dot-source is refused (dotSourced) and powershell -File <rig>\bin\close.ps1 stays a nested-powershell block.
+const CLOSE_SCRIPT = RIG + '/bin/close.ps1';
 function closeDenied(words, opaque, P) {
   const name = words.filter((w) => !/^-force$/i.test(w));
   if (!opaque && words.length - name.length <= 1 && name.length === 1 && unquote(name[0]) === P.name) return '';
   return (
     `close.ps1 takes exactly this project's name, written out plainly, and -Force only after Jas said "close anyway": ` +
-    `& '${RIG_WIN}\\close.ps1' ${P.name} (or ${P.name} -Force), from the PowerShell tool. Another project's lanes belong to its own orchestrator`
+    `& '${RIG_WIN}\\bin\\close.ps1' ${P.name} (or ${P.name} -Force), from the PowerShell tool. Another project's lanes belong to its own orchestrator`
   );
 }
 // lanes.ps1 (the lean build) starts the missing lanes of the project it is given, in the orchestrator's herdr space; it holds the herdr agent
 // start and pane split the orchestrator itself may not run, and the lanes' flags. So the orchestrator's call names exactly its own project,
 // written out plainly; words the guard can't all read (`opaque`) could hold another argument, so they refuse too. As for close.ps1, only the
-// & (or bare-path) run gets here: powershell -File <rig>\lanes.ps1 stays a nested-powershell block.
-const LANES_SCRIPT = RIG + '/lanes.ps1';
+// & (or bare-path) run gets here: powershell -File <rig>\bin\lanes.ps1 stays a nested-powershell block.
+const LANES_SCRIPT = RIG + '/bin/lanes.ps1';
 // A dot-source runs a script in the caller's own shell. close.ps1 and lanes.ps1 hold herdr, so the orchestrator runs them only with & or by
 // the bare path, never dot-sourced (lean review, Important 1; both scripts also remove their herdr helper when they end).
 const dotSourced = (name, P) =>
-  `${name} runs with & (or by its bare path), never dot-sourced: a dot-source runs it in your own shell. & '${RIG_WIN}\\${name}' ${P.name}, from the PowerShell tool`;
+  `${name} runs with & (or by its bare path), never dot-sourced: a dot-source runs it in your own shell. & '${RIG_WIN}\\bin\\${name}' ${P.name}, from the PowerShell tool`;
 function lanesDenied(words, opaque, P) {
   if (!opaque && words.length === 1 && unquote(words[0]) === P.name) return '';
   return (
-    `lanes.ps1 takes exactly this project's name, written out plainly: & '${RIG_WIN}\\lanes.ps1' ${P.name}, from the PowerShell tool. ` +
+    `lanes.ps1 takes exactly this project's name, written out plainly: & '${RIG_WIN}\\bin\\lanes.ps1' ${P.name}, from the PowerShell tool. ` +
     "Another project's lanes belong to its own orchestrator"
   );
 }
@@ -1169,13 +1169,13 @@ function lanesDenied(words, opaque, P) {
 // escaped, `--project=x`, another case), and a call whose words the guard can't all read (`opaque`: a $( ), a backtick, a ( ) or { } group,
 // a quote it can't pair) could hold one more, so both are refused; pms.cjs itself refuses a --project given twice and an unknown option.
 // pms.cjs never takes a { or } outside quotes (rereview-pms N1): scanArgs reads `} <word>` as two words, but in PowerShell a } that closes a
-// block ends the statement and the word after it runs on its own (`if (...) { & <rig>\pms.cjs ... } .\other.ps1`). A title with braces is
+// block ends the statement and the word after it runs on its own (`if (...) { & <rig>\bin\pms.cjs ... } .\other.ps1`). A title with braces is
 // quoted, so it stays one quoted word.
 // pam build (B.2): only pam sends a write; the orchestrator's pms.cjs call holds no --live (in any spelling the shell turns into --live:
 // quoted or escaped pieces count, so the word is read with its quotes and backslashes taken out, like --project above). That pam writes only
 // after Jas's yes stays a role rule: the orchestrator writes "Jas approved: post" into pam's brief, and the guard can't hear Jas.
 const pmsOnly = (P) =>
-  `pms.cjs takes only this project: --project ${P.name}, given once and written out plainly (node ${RIG_DIR}/pms.cjs --project ${P.name} <verb> ...); ` +
+  `pms.cjs takes only this project: --project ${P.name}, given once and written out plainly (node ${RIG_DIR}/bin/pms.cjs --project ${P.name} <verb> ...); ` +
   "another project's PMS board belongs to that project's own seats";
 const PMS_LIVE =
   'only pam, the PMS writer, runs pms.cjs with --live: the orchestrator reads the board (board, show) and runs a write without --live (a dry run), shows Jas the output, ' +
@@ -1229,7 +1229,7 @@ function hiddenRun(view, q, tool) {
 // space). Each tool call is a fresh shell, so a change made in an earlier call never reaches it, and one after it runs when it is done.
 const wholeOnly = (name) =>
   `${name} comes first in its command, with nothing before it (a statement before it could change what the script calls: an alias, a function, PATH or herdr's variables): ` +
-  `& '${RIG_WIN}\\${name}' and its arguments, from the PowerShell tool`;
+  `& '${RIG_WIN}\\bin\\${name}' and its arguments, from the PowerShell tool`;
 const LAUNCHER_MSG =
   "a launcher starts a program the guard can't follow (Start-Process, start, Start-Job, Invoke-Item, wt, conhost, runas, winpty, sudo, and the script hosts cscript, wscript and mshta); " +
   'run the program directly, as your role or brief writes it';
@@ -1315,7 +1315,7 @@ function scriptRun(view, q, cwd, P, seat, tool) {
             ? closeDenied(a.words, a.opaque, P)
             : real === LANES_SCRIPT
               ? lanesDenied(a.words, a.opaque, P)
-              : worktreeNameDenied(a.words, P, real === RIG + '/wt-new.ps1');
+              : worktreeNameDenied(a.words, P, real === RIG + '/bin/wt-new.ps1');
       if (denied) return block('seat-limits', denied);
       if (real !== PMS_SCRIPT && quiet.slice(0, m.index).trim() !== '') return block('seat-limits', wholeOnly(baseName(real)));
       RE.orchScriptAt.lastIndex = Math.max(a.end, end);
@@ -1347,7 +1347,7 @@ function scriptRun(view, q, cwd, P, seat, tool) {
     if (real === CLOSE_SCRIPT) return block('seat-limits', closeDenied([], false, P) + " (through Start-Process or Start-Job the guard can't read its arguments)");
     if (real === LANES_SCRIPT) return block('seat-limits', lanesDenied([], false, P) + " (through Start-Process or Start-Job the guard can't read its arguments)");
   }
-  const file = RE.rigScriptFile.exec(view); // powershell -File <rig>\wt-new.ps1 <name>
+  const file = RE.rigScriptFile.exec(view); // powershell -File <rig>\bin\wt-new.ps1 <name>
   if (file) {
     if (seat !== 'orchestrator') return block('seat-limits', scriptMsg);
     const denied = worktreeNameDenied(file[1] === undefined ? [] : [file[1]], P);
@@ -1555,7 +1555,7 @@ if (require.main === module) {
     if (profileError) {
       result = block(
         'config',
-        `${profileError}. Every hook command is node ${RIG_DIR}/guard.cjs --project <name> --seat <seat> || exit 2, with a valid <rig>/<name>/profile.json; tell Jas (a lane started before v4 has to be restarted)`
+        `${profileError}. Every hook command is node ${RIG_DIR}/hooks/guard.cjs --project <name> --seat <seat> || exit 2, with a valid <rig>/<name>/profile.json; tell Jas (a lane started before v4 has to be restarted)`
       );
     } else {
       try {
