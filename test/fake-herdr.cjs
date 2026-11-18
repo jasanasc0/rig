@@ -1,5 +1,5 @@
 'use strict';
-// Fake herdr for the rig's self-tests (close.selftest.ps1, rig.selftest.ps1, lanes.selftest.ps1): each test copies this file next to a
+// Fake herdr for the rig's self-tests (close.selftest.ps1, rig.selftest.ps1, lanes.selftest.ps1, launch.selftest.ps1): each test copies this file next to a
 // herdr.cmd in a temp bin folder and puts only that folder, node and Windows on PATH, so the real herdr (Jas's live server) is never called.
 // It answers from state.json next to it, in herdr 0.8.2's JSON shapes, changes the state as herdr would, and appends every call to
 // calls.log with its words joined by tabs (a root with a blank stays one word). A command named in state.json's `canned` (its words joined
@@ -7,7 +7,9 @@
 // without the id, exit 0) or a herdr error code (exit 1).
 // State: panes [{ pane_id, tab_id, workspace_id, agent, name, agent_status, stubborn, args, cwd }], tabs [{ tab_id, workspace_id, label }],
 // current (the calling pane), names (workspace labels), canned, notReady (pane id -> how many more agent starts in it answer
-// agent_pane_unavailable: its shell is not at its prompt yet), made (the last pane number per space: herdr never reuses a pane id).
+// agent_pane_unavailable: its shell is not at its prompt yet), made (the last pane number per space: herdr never reuses a pane id), and for
+// launch.selftest.ps1: down (no server: api snapshot answers server_not_running), an agent pane's terminal_title_stripped, a pane's fg
+// (its foreground command lines for pane process-info) and ran (what pane run typed into it), focused (the last workspace focus).
 // An /exit ends the agent (its herdr name goes with it) unless the pane is stubborn; a blocked agent refuses a prompt; a closed tab takes
 // its panes; a split opens a pane in the anchor's tab; agent start puts a named agent in an empty pane.
 const fs = require('fs');
@@ -97,6 +99,51 @@ else if (cmd === 'workspace rename' && a.length === 4) {
   else {
     s.tabs.splice(i, 1);
     s.panes = s.panes.filter((p) => p.tab_id !== a[2]);
+    save();
+    ok({ type: 'ok' });
+  }
+} else if (cmd === 'api snapshot' && a.length === 2) {
+  // The rig-view build (launch.selftest.ps1): `down` = no server; spaces are the ids of the panes and tabs, labelled from names.
+  // Only the fields herdr 0.9.5 shows (probed 2026-11-18): a shell pane has no agent or title fields; agents[] carry the herdr name.
+  if (s.down) fail('server_not_running', 'no herdr server is running');
+  else {
+    const ids = [...new Set([...s.panes, ...s.tabs].map((x) => x.workspace_id))];
+    const workspaces = ids.map((id) => ({ workspace_id: id, label: (s.names || {})[id] || '' }));
+    const base = (p) => ({ pane_id: p.pane_id, tab_id: p.tab_id, workspace_id: p.workspace_id, cwd: p.cwd, agent_status: p.agent ? p.agent_status || 'idle' : 'unknown' });
+    const withAgent = (p) => ({ ...base(p), agent: p.agent, terminal_title_stripped: p.terminal_title_stripped || '' });
+    const panes = s.panes.map((p) => (p.agent ? withAgent(p) : base(p)));
+    const agents = s.panes.filter((p) => p.agent).map((p) => ({ ...withAgent(p), ...(p.name ? { name: p.name } : {}) }));
+    ok({ type: 'snapshot', snapshot: { version: '0.9.5', protocol: 22, workspaces, tabs: s.tabs, panes, agents } });
+  }
+} else if (cmd === 'pane process-info' && a.length === 4 && a[2] === '--pane') {
+  // A pane's foreground: its fg list (command lines) when set, else claude for an agent pane and the shell for any other.
+  const p = pane(a[3]);
+  if (!p) fail('pane_not_found', 'no pane ' + a[3]);
+  else {
+    const fg = p.fg || [p.agent ? 'C:\\Users\\you\\.local\\bin\\claude.exe' : 'C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe -NoExit -Command x'];
+    ok({ type: 'process_info', process_info: { foreground_processes: fg.map((c) => ({ argv0: c.split(' ')[0], cmdline: c })) } });
+  }
+} else if (cmd === 'workspace create' && a.length === 7 && a[2] === '--cwd' && a[4] === '--label' && a[6] === '--no-focus') {
+  const ws = 'w' + (Math.max(0, ...[...s.panes, ...s.tabs].map((x) => Number(x.workspace_id.slice(1)) || 0)) + 1);
+  const tab = { tab_id: ws + ':t1', workspace_id: ws, label: '1' };
+  const p = { pane_id: ws + ':p1', tab_id: tab.tab_id, workspace_id: ws, cwd: a[3] };
+  s.tabs.push(tab);
+  s.panes.push(p);
+  s.names = { ...s.names, [ws]: a[5] };
+  save();
+  ok({ type: 'workspace_created', workspace: { workspace_id: ws, label: a[5] }, tab, root_pane: p });
+} else if (cmd === 'pane run' && a.length === 4) {
+  const p = pane(a[2]);
+  if (!p) fail('pane_not_found', 'no pane ' + a[2]);
+  else {
+    p.ran = [...(p.ran || []), a[3]];
+    save();
+    ok({ type: 'ok' });
+  }
+} else if (cmd === 'workspace focus' && a.length === 3) {
+  if (![...s.panes, ...s.tabs].some((x) => x.workspace_id === a[2])) fail('workspace_not_found', 'no workspace ' + a[2]);
+  else {
+    s.focused = a[2];
     save();
     ok({ type: 'ok' });
   }

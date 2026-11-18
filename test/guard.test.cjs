@@ -2886,6 +2886,20 @@ for (const seat of ['coder', 'checker', 'pam']) {
 // The worker rule names close.ps1 and lanes.ps1 as whole file names only: auto-close.ps1 or a lanes.ps1.bak are other files.
 for (const c of ['npx vitest run src/auto-close.ps1.test.ts', 'git log --oneline -- tools/close.ps1.bak', 'git log --oneline -- tools/lanes.ps1.bak'])
   t(`close: a worker naming another file (${c}) is not the close.ps1 and lanes.ps1 rule`, 'checker', 'Bash', sh(c), true);
+// ===================== the rig view: launch.ps1 and rigview.mjs are the owner's own =====================
+// No seat's shell may name them, the orchestrator's included: run, by a relative path from the rig folder, or as an argument.
+const OWNER_ONLY = ["launch.ps1 and rigview.mjs are the owner's own"];
+for (const seat of ['orchestrator', 'coder', 'checker', 'pam']) {
+  for (const c of [`& '${RIG}\\bin\\launch.ps1'`, `& '${RIG}\\bin\\launch.ps1' -NoWait`, `node '${RIG}\\bin\\rigview.mjs' --once`, `node ${RIGF}/bin/rigview.mjs`])
+    t(`rig-view: ${seat} runs ${c.slice(-30)}: blocked`, seat, 'PowerShell', sh(c), false);
+  t(`rig-view: ${seat} with its shell in the rig folder runs .\\bin\\launch.ps1: blocked`, seat, 'PowerShell', sh('& .\\bin\\launch.ps1'), false, { activeWorktree: AW }, RIG);
+  t(`rig-view: ${seat} with its shell in the rig folder runs node bin/rigview.mjs: blocked`, seat, 'Bash', sh('node bin/rigview.mjs --once'), false, { activeWorktree: AW }, RIG);
+  tr(`rig-view: ${seat} runs .\\launch.ps1: blocked by the owner's-own rule`, seat, 'PowerShell', sh('& .\\launch.ps1'), 'seat-limits', OWNER_ONLY);
+  tr(`rig-view: ${seat} runs node rigview.mjs: blocked by the owner's-own rule`, seat, 'Bash', sh('node rigview.mjs'), 'seat-limits', OWNER_ONLY);
+}
+// Whole file names only: a project's own relaunch.ps1 or rigview.mjs.map is another file.
+for (const c of ['git log --oneline -- tools/relaunch.ps1', 'git log --oneline -- dist/rigview.mjs.map'])
+  t(`rig-view: a worker naming another file (${c}) is not the launch.ps1 and rigview.mjs rule`, 'checker', 'Bash', sh(c), true);
 // ===================== the holes build (2026-11-03): what the orchestrator's and pam's shell can't hide =====================
 // The engine port's review found each of these allowed: a call through a variable or an expression, a dot-source with no blank after the
 // dot, a file or code loaded into the shell, a program started through .NET, WMI or COM, and herdr's pane variables changed before

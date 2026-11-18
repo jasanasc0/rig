@@ -544,6 +544,8 @@ const RE = {
   pmsWord: /\bpms\.cjs\b/i,
   // close.ps1 and lanes.ps1 too (the close and lean builds): they close and start the lanes through herdr, which no worker may drive.
   laneScriptWord: /(?<![\w.-])(?:close|lanes)\.ps1(?![\w.-])/i,
+  // launch.ps1 and rigview.mjs (the rig view): the owner's own, no seat's shell may name them, the orchestrator's included.
+  ownerScriptWord: /(?<![\w.-])(?:launch\.ps1|rigview\.mjs)(?![\w.-])/i,
   herdr: new RegExp(CMD_POS + program('herdr'), 'gi'),
   herdrLauncher: headTail(
     new RegExp(CMD_POS_FIRST + String.raw`(?:${LAUNCHER})\b`, 'i'),
@@ -1443,6 +1445,10 @@ function checkShell(seat, cmd, cwd, P, tool) {
   // them either, pam's included: the rig-path rule alone misses a shell that is already in the rig folder, as for pms.cjs.
   if (seat !== 'orchestrator' && RE.laneScriptWord.test(unglue(cmd)))
     return block('seat-limits', "only the orchestrator runs close.ps1 and lanes.ps1 (they end the shift and start the lanes, through herdr); a worker's shell may not name them");
+  // launch.ps1 starts the shift through herdr (spaces, rig.ps1, the view) from the owner's Desktop shortcut, and rigview.mjs is the owner's
+  // view in its own herdr space (the rig view): no seat's shell may name either, the orchestrator's included.
+  if (RE.ownerScriptWord.test(unglue(cmd)))
+    return block('seat-limits', "launch.ps1 and rigview.mjs are the owner's own (the Desktop shortcut starts the shift and the rig view); no seat's shell may name them");
   const unglued = unglue(view);
   const claude = checkClaude(cmd, unglued, unglued === view ? q : quoteMap(unglued));
   if (claude) return claude;

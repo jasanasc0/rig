@@ -131,6 +131,7 @@ Exit 2 blocks the call and sends the reason back to the model. The `|| exit 2` m
   - the coder edits only inside the active ticket's worktree, cannot use `git add -A`, cannot install packages, cannot write files from the shell and cannot name the rig folder;
   - angela, oscar and pam cannot write at all;
   - workers cannot run herdr or start a background command;
+  - no seat's shell may name `launch.ps1` or `rigview.mjs` (yours: the Desktop shortcut and the rig view), the orchestrator's included;
   - the orchestrator edits only its own project's knowledge folders and `work\` folder, runs only a fixed list of rig scripts, stays in the main checkout, and runs herdr only for its own lanes. It cannot start a lane, split a pane or open a tab itself: `lanes.ps1` and `rig.ps1` do that.
 - **Worktree safety:** recursive deletes of worktrees or `node_modules`, `git clean`, and anyone but the orchestrator creating or removing worktrees.
 - **The rules themselves:** edits anywhere in `<rig>\` (except the orchestrator's own working files), to any `.claude\settings*.json`, to Obsidian settings, and to the herdr skill folder.
@@ -166,6 +167,7 @@ Read these before you trust the rig with anything you cannot undo.
 - **The coder's shell copy or move after a `cd` out of its worktree is not caught yet.** The guard checks a shell command against the rig folder only by the common spellings of its path. A copy or move that follows a `cd` out of the worktree, or that uses a name built from `$env:HOMEDRIVE$env:HOMEPATH`, can reach rig files and a project's `core-scope.json`. The coder's role text forbids it, and a later change is meant to close it. The same gap lets a shell reach another project's checkout.
 - **A text filter has a ceiling.** A command name built at run time (`$(echo claude)`, `& $c`), a name with a stray backslash, and a few other tricks are not read in the coder's, angela's and oscar's shells; the orchestrator and pam refuse every computed call (see [What it blocks](#what-it-blocks)). What stays past the orchestrator's and pam's rules is the ceiling of a text filter: a name assembled from pieces inside a string (`'Shell.Appl' + 'ication'` handed to a .NET or COM call), Windows' other program launchers (`rundll32`, `regsvr32`, `forfiles`, `msbuild` and the like), a program named by a variable or a setting a tool reads (`GIT_PAGER`, `EDITOR`, `git -c core.pager=...`), code a tool finds on its own in a folder the orchestrator writes (`node --test`, `python -m <name>`), and rarer spellings of the refused forms. Closing those would take an allow-list of what the orchestrator's shell may run. For every seat the guard refuses `cmd /c`, also written `cmd //c` from Git Bash. The role texts tell each lane not to work around a block.
 - **It can block harmless text.** A commit message that holds the word `powershell`, or a command that holds `herdr` or `claude` next to some punctuation, can be stopped. Each block says which rule fired.
+- **The launcher trusts herdr to say what runs in a pane.** `launch.ps1` types only into a pane where `herdr pane process-info` shows nothing but the shell, and finds a running rig view the same way. Whether herdr lists a shell's child program on Windows is not yet confirmed on a live run: if it does not, a second launch types `node ...rigview.mjs` into the running view (those keys only switch its views). Check it once with `node -e "setTimeout(()=>{},60000)"` in one pane and `herdr pane process-info --pane <its id>` from another: `node.exe` must be listed.
 - **Approvals are a role rule.** The guard cannot tell whether you really said "post". pam posts only when her brief holds the line `Jas approved: post`, and only the orchestrator writes that line, only after you say it.
 
 ## 5. Requirements
@@ -428,6 +430,18 @@ Then, in that space's first pane, run `rig.ps1` by its full path. The pane start
 
    `close.ps1` checks everything first, then sends each lane `/exit` and closes its pane, closes the `seats` tab if only lanes were in it, and closes the orchestrator's own pane last. It refuses if a lane is `working`, `blocked` or `unknown`; `-Force` ("close anyway") overrides that. It never stops the herdr server or closes the space. It needs `HERDR_ENV=1`, which herdr sets inside its panes.
 
+8. **One-click start.** `bin\launch.ps1` starts the shift for every project at once. Make it a Desktop shortcut once:
+
+   ```powershell
+   $s = (New-Object -ComObject WScript.Shell).CreateShortcut("$env:USERPROFILE\Desktop\Rig.lnk")
+   $s.TargetPath = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+   $s.Arguments = '-NoProfile -ExecutionPolicy Bypass -File "<rig>\bin\launch.ps1"'
+   $s.Save()
+   ```
+
+   A double-click opens a Windows Terminal window with herdr when its server is not running, types `& '<rig>\bin\rig.ps1' <name>` into a free pane for every project whose orchestrator is not running (the one pane of a space labelled with its name, herdr's fresh default space, or a new space), starts the rig view in a space labelled `view` and focuses it. It only adds: it never closes, stops or kills anything, never types into a pane where something other than the shell runs or into a space you made, and runs one at a time. A second double-click leaves what runs alone. Every line it prints says what it did; after a warning it waits for Enter.
+9. **The rig view.** `node '<rig>\bin\rigview.mjs'` (the launcher starts it) is a read-only view of every rig, refreshed every 3 s from `herdr api snapshot`, the rig's files and each lane's transcript: TABLE (per seat: model and effort, state, context size, tab, last action, last brief), RECENT (briefs handed out, finished tickets from `log.md`), OVERVIEW (`now.md`), GRAPH (a rig as a hub), and an explorer tree that narrows them to one rig. Keys `t r o g` or ←/→, Tab, `q`, and clicks. It never sends a key to a lane, focuses or starts one. Its colours and the ● ◐ ○ marks follow OpenRig's TUI (Apache-2.0, github.com/mvschwarz/openrig; no code copied).
+
 ## 9. Tests
 
 Run every command from `<rig>`. Each suite reads only the repo, temp folders and read-only `--help` output. A fresh clone passes them all with no project folder present. Each `node` suite prints its pass count and exits non-zero on a miss. Each PowerShell selftest prints `ok` or `FAIL` lines and sets its exit code.
@@ -440,6 +454,8 @@ node test/config.test.cjs
 node test/template.test.cjs
 node test/projects.check.test.cjs
 node test/content-gate.test.cjs
+node test/rigview.test.cjs
+powershell -NoProfile -ExecutionPolicy Bypass -File test\launch.selftest.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File test\close.selftest.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File test\rig.selftest.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File test\lanes.selftest.ps1
@@ -450,13 +466,15 @@ powershell -NoProfile -ExecutionPolicy Bypass -File test\new-project.selftest.ps
 
 | Suite | Covers | Count at the last run |
 |---|---|---|
-| `guard.test.cjs` | The guard's decisions: at least one blocked and one allowed case per rule, run on `example` and a second fixture. | 3272 checks |
+| `guard.test.cjs` | The guard's decisions: at least one blocked and one allowed case per rule, run on `example` and a second fixture. | 3306 checks |
 | `helpers.test.cjs` | `report.cjs`, `refocus.cjs`, `context-check.cjs`. | 79 checks |
 | `pms.test.cjs` | The board client's dry runs, refusals and filters, against a fake board on localhost. | 305 checks |
 | `config.test.cjs` | The profile validator, the `.gitignore` globs, `rig.ps1`, `lanes.ps1` and the worktree scripts, and `example`'s settings. | 175 checks |
 | `template.test.cjs` | The template: the shared CLAUDE.md section, its one placeholder, its hooks and its `lanes.ps1` line against the guard, its FILL IN paragraphs, and the boundary, `Guard:`, `Commit:` and settled-items texts of the seats and the orchestrator. | 33 checks (32 when there is no local word list) |
 | `projects.check.test.cjs` | The real-project check below. | 12 cases |
 | `content-gate.test.cjs` | The content gate and the pre-push hook. | 20 cases |
+| `rigview.test.cjs` | The rig view: every view of a made-up rig, from a saved snapshot and transcript. | 29 checks |
+| `launch.selftest.ps1` | `launch.ps1` against the fake herdr and a fake `wt`: a fresh server, rigs running, leftover and busy spaces, herdr failures, the lock. About 45 seconds: one case waits out the 30 s server wait. | 29 ok lines |
 | `close.selftest.ps1` | `close.ps1` against a fake herdr on an isolated PATH. About a minute. | 63 ok lines |
 | `rig.selftest.ps1` | `rig.ps1`'s herdr steps against the same fake herdr and a fake `claude`. About 20 seconds. | 35 ok lines |
 | `lanes.selftest.ps1` | `lanes.ps1` against the same fake herdr. About 2 minutes: one case waits out the 15 s retry. | 48 ok lines |
@@ -489,6 +507,8 @@ node test/config.test.cjs
 node test/template.test.cjs
 node test/projects.check.test.cjs
 node test/content-gate.test.cjs
+node test/rigview.test.cjs
+powershell -NoProfile -ExecutionPolicy Bypass -File test\launch.selftest.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File test\close.selftest.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File test\rig.selftest.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File test\lanes.selftest.ps1
