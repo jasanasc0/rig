@@ -69,7 +69,7 @@ Every seat is plain Claude Code started with its own flags, a settings file and 
 |---|---|---|---|
 | orchestrator | opus, high | Talks ideas through with you, researches, writes briefs, runs the lanes, reports back, keeps the working notes. | Writes product code. Pushes, merges or deploys. Posts to the board (it may run the board script's reads and dry runs; only pam runs `--live`). |
 | coder | opus, max; ponytail at ultra | Builds the change inside one ticket's worktree. For a bug: a failing test first, then the fix. Commits on the worktree branch. | Edits outside the active worktree. Installs packages. Runs herdr. Writes to the rig folder. |
-| angela | fable, max | Reviews the change adversarially, with proof: a failing test, an input and its wrong output, or a caller chain as `file:line`. Grades each finding BLOCKING, RESPOND or ADVISORY and ends with a verdict. | Edits anything. |
+| angela | fable, xhigh | Reviews the change adversarially, with proof: a failing test, an input and its wrong output, or a caller chain as `file:line`. Grades each finding BLOCKING, RESPOND or ADVISORY and ends with a verdict. | Edits anything. |
 | oscar | sonnet, medium | The gate. Runs lint, tests, build and type-check in the worktree and reports PASS or FAIL per command against a known baseline. Checks the coder's red-to-green proof. | Edits anything. |
 | pam (tab 2) | sonnet, medium | Posts the board updates the orchestrator drafted, only after you say "post". Dry-runs first and flags anything that contradicts the draft. | Edits files. Posts without the line `Jas approved: post` in her brief. |
 
@@ -79,6 +79,9 @@ Rules that hold for every seat:
 - A lane has no `Agent` tool and cannot use herdr.
 - A lane answers in a fixed report format between `=== REPORT ===` and `=== END ===`. The orchestrator reads only that block (`report.cjs` extracts it).
 - Each seat file has a section named "The project's CLAUDE.md". It is the same text in all four seat files, and `template.test.cjs` checks that.
+- Each seat file opens with "Your boundary": what the seat may do, and what is out of bounds even when a tool or the guard lets it through. Every report carries a `Guard:` line for each block and for any way past the guard the lane noticed (never used or probed). The orchestrator's last hard rule is its own boundary; gaps it finds go to you.
+- angela's and oscar's reports open with `Commit:`, the commit they checked, and angela's lists what she checked and what she didn't. The orchestrator acts on a verdict only for that commit; if the branch moved since, it shows you a `git range-diff` and asks which lane runs again.
+- The coder stops and reports when something the task depends on is missing (a plan section, a file, symbol or test, the base commit), instead of writing a stand-in.
 
 ## 3. The loop for a ticket
 
@@ -451,7 +454,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File test\new-project.selftest.ps
 | `helpers.test.cjs` | `report.cjs`, `refocus.cjs`, `context-check.cjs`. | 79 checks |
 | `pms.test.cjs` | The board client's dry runs, refusals and filters, against a fake board on localhost. | 305 checks |
 | `config.test.cjs` | The profile validator, the `.gitignore` globs, `rig.ps1`, `lanes.ps1` and the worktree scripts, and `example`'s settings. | 175 checks |
-| `template.test.cjs` | The template: the shared CLAUDE.md section, its one placeholder, its hooks and its `lanes.ps1` line against the guard, its FILL IN paragraphs. | 7 checks (6 when there is no local word list) |
+| `template.test.cjs` | The template: the shared CLAUDE.md section, its one placeholder, its hooks and its `lanes.ps1` line against the guard, its FILL IN paragraphs, and the boundary, `Guard:`, `Commit:` and settled-items texts of the seats and the orchestrator. | 33 checks (32 when there is no local word list) |
 | `projects.check.test.cjs` | The real-project check below. | 12 cases |
 | `content-gate.test.cjs` | The content gate and the pre-push hook. | 20 cases |
 | `close.selftest.ps1` | `close.ps1` against a fake herdr on an isolated PATH. About a minute. | 63 ok lines |

@@ -30,7 +30,7 @@ if (process.exitCode) process.stderr.write('stub guard: this is not the test PAT
 # its own project's settings file, seat file and MCP config.
 $flags = [ordered]@{
   coder = '--model opus --effort max --permission-mode auto --disallowedTools Agent'
-  angela = '--model fable --effort max --permission-mode auto --disallowedTools Edit Write NotebookEdit Agent'
+  angela = '--model fable --effort xhigh --permission-mode auto --disallowedTools Edit Write NotebookEdit Agent'
   oscar = '--model sonnet --effort medium --permission-mode auto --disallowedTools Edit Write NotebookEdit Agent'
   pam = '--model sonnet --effort medium --permission-mode auto --disallowedTools Edit Write NotebookEdit Agent'
 }

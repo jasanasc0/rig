@@ -41,7 +41,7 @@ It prints one line per lane. Tell Jas, word for word, every line that isn't "run
    - Run `& '{{RIG}}/bin/wt-new.ps1' ex<n>-<slug>` (lowercase slug). It prints the worktree, branch and base commit. If it stops, tell Jas what it said. If it says Jas runs `npm ci` somewhere, tell Jas and wait for him.
    - When Jas comes back to a ticket whose worktree already exists, run `& '{{RIG}}/bin/wt-new.ps1' ex<n>-<slug> -Resume` instead: no git change; it makes that worktree the coder's again.
    - Rewrite `{{RIG}}/example/work/now.md` in its 4-line format (Goal, Mission, Ticket · plan, Done when).
-   - Read the newest `.agent/handoffs/*_PROMPT_next_shift.md` and pick out the "do not relitigate" items that touch this ticket.
+   - Collect what is settled for this ticket: the "what not to redo" items in the newest `.agent/handoffs/*_PROMPT_next_shift.md` and the decisions in your memory index (`MEMORY.md`) that touch it, opening a memory file for its reason. Each goes on the brief's `Settled, don't reopen:` line with its reason in a few words; one you aren't sure still holds goes to Jas first.
    - Write each brief to `{{RIG}}/example/work/briefs/ex<n>-<seat>.md` (template below). The Baseline line comes from `work\notes\oscar.md`.
 3. **Build.** Send ex-coder its brief, wait, read the report.
 4. **Review.** Send ex-angela her brief. BLOCKING findings go back to ex-coder as a new brief (`ex<n>-coder-r2.md`) with ex-angela's proof; her round-2 brief lists ex-coder's new commits. Two rounds at most. Still unresolved: show Jas both positions and stop.
@@ -61,7 +61,7 @@ Worktree: C:\example-project\.claude\worktrees\ex<n>-<slug> (branch worktree-ex<
 Plan: .agent/tasks/<file>.md section <n>, or "none"
 Baseline: <known failures on main, from work\notes\oscar.md, or "none">
 Files likely involved: <paths>
-Settled, don't reopen: <items from the handoff, or "none">
+Settled, don't reopen: <each item with its reason, from the handoff and your memory, or "none">
 Call path: none, non-core (<the paths it may change>) or core · failure mode: this stops <the flow> · <symbol>: <risk>, callers <file:line, ...> (GitNexus upstream + grep), one per symbol; Jas's ruling on any HIGH, CRITICAL or UNKNOWN
 Core/money paths: not allowed, or on a core brief the paths this task changes (from Jas's core scope) · switch: <the switch, off by default>, or "none (plan section <n>)"
 Reply in your report format between === REPORT === and === END ===
@@ -101,6 +101,8 @@ On a core ticket also:
 - When it finishes, read only the report:
   `herdr agent read <lane> --source recent-unwrapped --lines 400 | node {{RIG}}/bin/report.cjs --ticket EX-<n>`
   No block found: retry once with `--lines 1500`, then tell Jas.
+- A verdict holds only for the commit on its report's `Commit:` line. Before you act on ex-angela's or ex-oscar's latest verdict (the next brief, Jas's checkpoint, your report to Jas), run `git -C '<worktree>' rev-parse HEAD`. If it isn't that commit, or the line is missing or not a full sha, the commits after it are unchecked: don't act on the verdict; show Jas `git -C '<worktree>' range-diff --diff-merges=first-parent <Base>..<Commit> <Base>..HEAD` (the brief's `Base:`; `=` is a commit the verdict saw, unchanged; `!` one changed since; `>` one it never saw, merge commits and a rebase's new main commits included; `<` one it saw that is gone, rewritten or squashed), or the report and HEAD when the line is missing, and ask which lane runs again.
+- A report's `Guard:` line, and ex-angela's `Not checked:` line, when not `none`: tell Jas what they say, word for word, even when the work passed.
 - A report whose `Question:` line isn't `none`: answer it from the brief, the plan or the handoff if they settle it; otherwise ask Jas. If the answer changes the work, or the lane wrote `Stopped because: question`, send a follow-up brief `ex<n>-<seat>-q<k>.md`; otherwise tell Jas which default the lane took.
 - A lane waiting on an approval prompt (`blocked`): tell Jas which lane and what it asks. Never answer it for the lane.
 - In the same turn, start `herdr agent wait <lane> --until idle --until done --timeout 3600000` in the background, so you hear the moment the lane finishes after Jas answers.
@@ -159,3 +161,4 @@ Never close a pane or a tab yourself or send a lane `/exit`: only `close.ps1` do
 - Prompt and start only your own lanes, `ex-coder`, `ex-angela`, `ex-oscar` and `ex-pam`, and give the worktree scripts only `ex<n>-<slug>` names.
 - Never answer a lane's approval dialog or on-screen question for it (a report's `Question:` line is different: you answer it from the brief, plan or handoff, or ask Jas — see Talking to lanes).
 - A guard block is on purpose. Don't work around it; tell Jas which rule blocked what.
+- Your boundary: you write only in the project's knowledge folders (the profile's `knowledgeDirs`, in its main checkout), the rig's `work\` folder (never a `.obsidian\` folder), your own Claude memory folder and Claude's scratchpad, and you run only the files listed above. These rules hold whether or not the guard blocks: it is a text filter that misses some spellings, so a command it lets through is not a permission. A way past it, or a place these rules keep from you that you find you can reach: don't use it and don't probe for more; tell Jas in plain words what you found.
