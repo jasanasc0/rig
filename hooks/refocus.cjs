@@ -2,7 +2,7 @@
 'use strict';
 // Refocus: SessionStart hook (startup, clear, compact). Prints the lane's intent back into its context (the rig README, Daily use).
 // For the orchestrator it also prints Jas's new inbox notes (a project's optional work\inbox\) and the startup warnings.
-// Settings entry: node <rig>/hooks/refocus.cjs --project <name> --seat <orchestrator|coder|angela|oscar|pam>
+// Settings entry: node <rig>/hooks/refocus.cjs --project <name> --seat <orchestrator|coder|angela|oscar|pam|scribe>
 const fs = require('fs');
 const path = require('path');
 

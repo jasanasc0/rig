@@ -10,10 +10,10 @@ $Esc = [char]27
 $parts = @()
 $badgeParts = @()
 
-# Rig lanes (herdr): every <rig>\<project>\profile.json names a project's root and its five lanes (pam since the pam build). A session whose
+# Rig lanes (herdr): every <rig>\<project>\profile.json names a project's root and its six lanes (pam since the pam build, scribe since the scribe build). A session whose
 # name is one of a project's lanes and whose folder is under that project's root is that project's lane (rig v4).
 $RigDir = Split-Path -Parent $PSScriptRoot # the rig: this file is in <rig>\hooks\
-$Seats = @('orchestrator', 'coder', 'angela', 'oscar', 'pam')
+$Seats = @('orchestrator', 'coder', 'angela', 'oscar', 'pam', 'scribe')
 $Dot = [char]0x00B7
 $Shield = [char]::ConvertFromUtf32(0x1F6E1) + [char]0xFE0F
 

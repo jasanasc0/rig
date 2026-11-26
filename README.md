@@ -2,7 +2,7 @@
 
 A small engine for running several Claude Code sessions as one team inside [herdr](https://herdr.dev), on Windows.
 
-One session is the **orchestrator**. You talk to it. It turns agreed work into briefs and sends them to worker sessions called **lanes**: a coder, a reviewer, a gate runner and a board clerk. A **guard** script checks every tool call each session makes and blocks the unsafe ones.
+One session is the **orchestrator**. You talk to it. It turns agreed work into briefs and sends them to worker sessions called **lanes**: a coder, a reviewer, a gate runner, a board clerk and a journal writer. A **guard** script checks every tool call each session makes and blocks the unsafe ones.
 
 This repo holds the engine only: the scripts, the guard, the tests and a template project called `example`. Your own projects live in folders next to it. Git ignores those folders, so they never enter this repo.
 
@@ -52,14 +52,14 @@ herdr space "example"
  +-----------------+-----------------+   +-----------------+
  |                 | ex-coder        |   |                 |
  | ex-orchestrator +--------+--------+   | ex-pam          |
- | (you talk here) | ex-    | ex-    |   |                 |
- |                 | angela | oscar  |   |                 |
+ | (you talk here) | ex-    | ex-    |   +-----------------+
+ |                 | angela | oscar  |   | ex-scribe       |
  +-----------------+--------+--------+   +-----------------+
 ```
 
-`rig.ps1` names the space after the project and opens tab 2, `seats`, before the orchestrator starts. The orchestrator then runs `lanes.ps1`, which splits the orchestrator's pane to the right for the coder, splits the coder's pane down for angela, splits angela's pane to the right for oscar, and starts pam in the one pane of the `seats` tab. A lane that already runs is left alone.
+`rig.ps1` names the space after the project and opens tab 2, `seats`, before the orchestrator starts. The orchestrator then runs `lanes.ps1`, which splits the orchestrator's pane to the right for the coder, splits the coder's pane down for angela, splits angela's pane to the right for oscar, starts pam in the one pane of the `seats` tab, and splits pam's pane down for scribe. A lane that already runs is left alone.
 
-Lane names are the project's ticket prefix plus the seat name: `ex-orchestrator`, `ex-coder`, `ex-angela`, `ex-oscar`, `ex-pam`.
+Lane names are the project's ticket prefix plus the seat name: `ex-orchestrator`, `ex-coder`, `ex-angela`, `ex-oscar`, `ex-pam`, `ex-scribe`.
 
 ## 2. The seats
 
@@ -72,13 +72,14 @@ Every seat is plain Claude Code started with its own flags, a settings file and 
 | angela | fable, xhigh | Reviews the change adversarially, with proof: a failing test, an input and its wrong output, or a caller chain as `file:line`. Grades each finding BLOCKING, RESPOND or ADVISORY and ends with a verdict. | Edits anything. |
 | oscar | sonnet, medium | The gate. Runs lint, tests, build and type-check in the worktree and reports PASS or FAIL per command against a known baseline. Checks the coder's red-to-green proof. | Edits anything. |
 | pam (tab 2) | sonnet, medium | Posts the board updates the orchestrator drafted, only after you say "post". Dry-runs first and flags anything that contradicts the draft. | Edits files. Posts without the line `Jas approved: post` in her brief. |
+| scribe (tab 2) | haiku, max | Keeps the project's work journal in `docs/journal/`: at "close", a day page from the shift's handoff and the day's commits (the orchestrator writes the commit lines into its brief); a week page on Fridays; a monthly draft at a month's end. Every fact links to its source. | Runs anything: it has no shell. Uses any tool but read, search, write, edit and its task list. Writes anything but plain `.md` pages under `docs/journal/`. |
 
 Rules that hold for every seat:
 
 - A lane runs every command in the foreground, so the orchestrator can tell when it is finished.
 - A lane has no `Agent` tool and cannot use herdr.
 - A lane answers in a fixed report format between `=== REPORT ===` and `=== END ===`. The orchestrator reads only that block (`report.cjs` extracts it).
-- Each seat file has a section named "The project's CLAUDE.md". It is the same text in all four seat files, and `template.test.cjs` checks that.
+- Each seat file has a section named "The project's CLAUDE.md". It is the same text in all five seat files, and `template.test.cjs` checks that.
 - Each seat file opens with "Your boundary": what the seat may do, and what is out of bounds even when a tool or the guard lets it through. Every report carries a `Guard:` line for each block and for any way past the guard the lane noticed (never used or probed). The orchestrator's last hard rule is its own boundary; gaps it finds go to you.
 - angela's and oscar's reports open with `Commit:`, the commit they checked, and angela's lists what she checked and what she didn't. The orchestrator acts on a verdict only for that commit; if the branch moved since, it shows you a `git range-diff` and asks which lane runs again.
 - The coder stops and reports when something the task depends on is missing (a plan section, a file, symbol or test, the base commit), instead of writing a stand-in.
@@ -130,6 +131,7 @@ Exit 2 blocks the call and sends the reason back to the model. The `|| exit 2` m
 - **Seat limits:**
   - the coder edits only inside the active ticket's worktree, cannot use `git add -A`, cannot install packages, cannot write files from the shell and cannot name the rig folder;
   - angela, oscar and pam cannot write at all;
+  - scribe has no shell, uses only its listed tools, and writes only plain Markdown pages (folders and names of letters, digits, `_` and `-`, ending in `.md`) under the project's `docs/journal/`, never `CLAUDE.md`, `CLAUDE.local.md` or `AGENTS.md`, which Claude Code would load as rules;
   - workers cannot run herdr or start a background command;
   - no seat's shell may name `launch.ps1` or `rigview.mjs` (yours: the Desktop shortcut and the rig view), the orchestrator's included;
   - the orchestrator edits only its own project's knowledge folders and `work\` folder, runs only a fixed list of rig scripts, stays in the main checkout, and runs herdr only for its own lanes. It cannot start a lane, split a pane or open a tab itself: `lanes.ps1` and `rig.ps1` do that.
@@ -329,9 +331,9 @@ What you get:
   rules\
     orchestrator.md       the orchestrator's role text
     orchestrator.settings.json, coder.settings.json, angela.settings.json,
-    oscar.settings.json, pam.settings.json
+    oscar.settings.json, pam.settings.json, scribe.settings.json
     mcp.json              the MCP servers the lanes may see
-    seats\coder.md, angela.md, oscar.md, pam.md
+    seats\coder.md, angela.md, oscar.md, pam.md, scribe.md
   work\
     notes\                one notes file per seat
     later.md              ideas parked for later
@@ -353,6 +355,7 @@ Each `FILL IN:` paragraph says what to write. Expect to cover:
 - the core and money paths, and why each is core;
 - risky areas the reviewer should read first;
 - the ticket prefix and the board, or "none";
+- the journal: where its layout is written, and whether `docs/journal/` stays out of the repo (git-ignored) or is tracked. Until you fill it in, scribe writes nothing;
 - the rules in the repo's own CLAUDE.md that work differently in the rig.
 
 Edit `profile.json` for the same facts. Its fields:
@@ -360,7 +363,7 @@ Edit `profile.json` for the same facts. Its fields:
 | Field | Meaning |
 |---|---|
 | `name`, `root`, `defaultBranch`, `ticketPrefix` | The folder name, the main checkout (forward slashes), the branch worktrees start from, the prefix. |
-| `lanes` | The five lane names: `orchestrator`, `coder`, `angela`, `oscar`, `pam`. |
+| `lanes` | The six lane names: `orchestrator`, `coder`, `angela`, `oscar`, `pam`, `scribe`. |
 | `knowledgeDirs` | Folders in the main checkout that only the orchestrator may write. |
 | `coreDirs`, `coreFiles`, `moneyNames` | The core folders (`/src/lib/`), core files (`/src/lib/x.ts`) and money file names. |
 | `boardScript` | `null`, or a script the orchestrator may run in the main checkout. |
@@ -405,7 +408,7 @@ Then, in that space's first pane, run `rig.ps1` by its full path. The pane start
 & 'C:\rig\bin\rig.ps1' myapp
 ```
 
-`rig.ps1` takes the project name as its one parameter. It asks the guard to accept the profile, names the herdr space after the project, opens the space's `seats` tab if it has none, moves to the project's root and starts the orchestrator. A herdr step that fails only warns, and it warns if you are not inside a herdr pane. The orchestrator then runs `lanes.ps1`, which starts the four lanes.
+`rig.ps1` takes the project name as its one parameter. It asks the guard to accept the profile, names the herdr space after the project, opens the space's `seats` tab if it has none, moves to the project's root and starts the orchestrator. A herdr step that fails only warns, and it warns if you are not inside a herdr pane. The orchestrator then runs `lanes.ps1`, which starts the five lanes.
 
 ## 8. Daily use
 
@@ -523,6 +526,13 @@ If any of them fails, do not start a shift until you know why.
 A pull changes the engine and the `example` template. It does not change your real projects, which are git-ignored: a project made earlier keeps its own copies of the role texts and settings files, so carry a template change over by hand. A lane that was started before the pull keeps the hook commands and role text it started with. Close the shift and start it again after a pull that changes the guard or a settings file.
 
 A project made before `lanes.ps1` still has `herdr agent start` and `herdr pane split` lines in its `rules\orchestrator.md`, and the guard now refuses them. Copy the template's startup steps and its "Starting lanes" section into it, with the project's name in the `lanes.ps1` line, and switch `supermemory@supermemory-plugins` off in its four worker settings files as the template does.
+
+A project made before the scribe seat has five lanes in its `profile.json`, and the guard now refuses that profile, so every call of the project is blocked until you add the sixth. Before the next shift:
+
+1. Add `"scribe": "<prefix>-scribe"` to `lanes` in `<rig>\<project>\profile.json`.
+2. Copy `example\rules\scribe.settings.json` and `example\rules\seats\scribe.md` into the project's `rules\` and `rules\seats\`, with `example` changed to the project's name and `{{RIG}}` to the rig folder, as `new-project.ps1` does.
+3. Fill in scribe's "The journal" section, and add the scribe lines to `rules\orchestrator.md` from the template: the lane list in "On startup" step 2, the seat list, "Starting lanes", steps 1 and 3 of "End of shift", and the "Prompt and start only your own lanes" hard rule. Then run `node bin/projects.check.cjs <project>`.
+4. In the "The project's CLAUDE.md" section of each seat file, change "the angela, oscar and pam seats run neither" to "the angela, oscar, pam and scribe seats run neither", so that section stays the same text in all five.
 
 When you change the engine on one machine:
 

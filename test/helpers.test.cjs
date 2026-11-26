@@ -328,7 +328,7 @@ check(
 fs.rmSync(path.join(offRoot, 'CLAUDE.md'), { recursive: true });
 fs.writeFileSync(path.join(offRoot, 'CLAUDE.md'), '# Scratch rules\n');
 for (const project of ['scratchon', 'scratchoff'])
-  for (const seat of ['orchestrator', 'coder', 'angela', 'oscar', 'pam'])
+  for (const seat of ['orchestrator', 'coder', 'angela', 'oscar', 'pam', 'scribe'])
     check(`Refocus without --claude-md (${project} ${seat}) dispatches to render() of its paths (render itself is unchanged since 3d78192)`, safe(() => rigRefocus.cli(['node', 'refocus.cjs', '--project', project, '--seat', seat])) === safe(() => rigRefocus.render(seat, rigRefocus.projectPaths(rigGuard.loadProfile(project)))));
 res = spawnSync(process.execPath, [path.join(rigCopy, 'hooks', 'refocus.cjs'), '--project', 'scratchoff', '--seat', 'coder'], { encoding: 'utf8' });
 check('Refocus without --claude-md, projectSettings false and a CLAUDE.md: none of it printed, exit 0', res.status === 0 && !res.stdout.includes('CLAUDE.md') && !res.stdout.includes('Scratch rules'));

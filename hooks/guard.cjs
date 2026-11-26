@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 // Rig guard: PreToolUse hook that blocks the tool calls the rig README's "Safety rules" forbid.
-// Settings entry: node <rig>/hooks/guard.cjs --project <name> --seat <orchestrator|coder|checker|pam> || exit 2
+// Settings entry: node <rig>/hooks/guard.cjs --project <name> --seat <orchestrator|coder|checker|pam|scribe> || exit 2
 // Exit 0 allows the call. Exit 2 blocks it, and stderr goes back to the model. The `|| exit 2` makes a missing or crashed
 // guard block too: without it the shell's exit 127 or 1 is an error Claude Code carries on past.
 // Jas's core scope (<rig>/<project>/core-scope.json, the core-scope build) opens the core paths it lists to the coder's Edit and Write in one
@@ -22,7 +22,9 @@ const SHARED_TEMP = HOME + '/appdata/local/temp/claude/'; // Claude's scratchpad
 const USERS_DIR = HOME.slice(0, HOME.lastIndexOf('/') + 1);
 const installed = (p) => /^c:\/program files(?: \(x86\))?\//.test(p) || (p.startsWith(USERS_DIR) && /^[^/]+\/appdata\/local\/programs\//.test(p.slice(USERS_DIR.length)));
 // pam (pam build): the PMS writer on herdr tab 2, with the checker's limits plus one runnable file, the rig's pms.cjs (README, Safety rules).
-const SEATS = ['orchestrator', 'coder', 'checker', 'pam'];
+// scribe (scribe build): the journal writer on herdr tab 2: no shell at all (decide), and Edit and Write of Markdown pages under
+// <root>/docs/journal/ only (checkEditPath).
+const SEATS = ['orchestrator', 'coder', 'checker', 'pam', 'scribe'];
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'NotebookEdit', 'MultiEdit']);
 // Obsidian CLI subcommands the orchestrator may run: read-only ones only. Workers get none.
 const OBSIDIAN_READ = new Set(['help', 'search', 'search:context', 'backlinks', 'links', 'unresolved', 'orphans', 'deadends', 'properties', 'property:read', 'files', 'tags', 'tasks', 'base:query', 'read']);
@@ -32,7 +34,7 @@ const OBSIDIAN_READ = new Set(['help', 'search', 'search:context', 'backlinks', 
 // and `pane split` (the lean build): lanes.ps1 starts the lanes (lanesRefused).
 const HERDR_OK = new Map(Object.entries({ agent: ['read', 'get', 'list', 'wait', 'prompt'], pane: ['list', 'current', 'read'], workspace: ['list'], tab: ['list'] }));
 // The worker lanes of every project. Their flags live in lanes.ps1, which starts them (the lean build).
-const WORKERS = ['coder', 'angela', 'oscar', 'pam'];
+const WORKERS = ['coder', 'angela', 'oscar', 'pam', 'scribe'];
 // A pane id: one token of letters, digits and : . _ - (it never starts with "-", so it can't pass for a flag).
 const PANE_ID = '[A-Za-z0-9][A-Za-z0-9:._-]*';
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -114,8 +116,8 @@ const PROFILE_FIELDS = {
   defaultBranch: (v) => typeof v === 'string' && /^[\w./-]+$/.test(v),
   ticketPrefix: (v) => typeof v === 'string' && /^[a-z]+$/.test(v),
   lanes: (v) =>
-    v !== null && typeof v === 'object' && !Array.isArray(v) && JSON.stringify(Object.keys(v).sort()) === '["angela","coder","orchestrator","oscar","pam"]' &&
-    Object.values(v).every((n) => typeof n === 'string' && LANE_NAME.test(n)) && new Set(Object.values(v)).size === 5,
+    v !== null && typeof v === 'object' && !Array.isArray(v) && JSON.stringify(Object.keys(v).sort()) === '["angela","coder","orchestrator","oscar","pam","scribe"]' &&
+    Object.values(v).every((n) => typeof n === 'string' && LANE_NAME.test(n)) && new Set(Object.values(v)).size === 6,
   knowledgeDirs: (v) => Array.isArray(v) && v.length > 0 && v.every((d) => typeof d === 'string' && FOLDER_NAME.test(d)),
   coreDirs: (v) => Array.isArray(v) && v.every((d) => corePath(d, /^\/(?:[^\\/]+\/)+$/)),
   coreFiles: (v) => Array.isArray(v) && v.every((f) => corePath(f, /^\/(?:[^\\/]+\/)*[^\\/]+$/)),
@@ -139,7 +141,7 @@ const PROFILE_RULES = {
   root: 'an absolute path (C:/...)',
   defaultBranch: 'a branch name',
   ticketPrefix: 'lowercase letters only',
-  lanes: 'an object with orchestrator, coder, angela, oscar and pam, five different names of lowercase letters, digits and -',
+  lanes: 'an object with orchestrator, coder, angela, oscar, pam and scribe, six different names of lowercase letters, digits and -',
   knowledgeDirs: 'a non-empty list of folder names',
   coreDirs: 'a list of folder paths like /src/core/: start and end with /, forward slashes only, no empty, . or .. segment',
   coreFiles: 'a list of file paths like /src/payments.ts: start with /, end in a file name, forward slashes only, no empty, . or .. segment',
@@ -225,6 +227,9 @@ function loadProfile(name) {
       'a script it writes would run outside the guard with Jas’s permissions. Read files with Read/Grep, write with Write/Edit, or report what you need',
     // pam's one file (pam build): the rig's pms.cjs, for its own project.
     pamScriptMsg: `pam runs only the rig's pms.cjs (node ${RIG_DIR}/bin/pms.cjs --project ${name} <verb> ..., as the brief writes it); any other script would run outside the guard with Jas’s permissions. Report what you need`,
+    // scribe's fence (scribe build): it writes Markdown pages only here (checkEditPath). It has no shell: decide refuses every command it
+    // sends, since the shared command rules have holes a seat that writes files could use to run one or to write elsewhere.
+    journal: root + '/docs/journal/',
   };
   PROFILES.set(name, P);
   return P;
@@ -296,6 +301,12 @@ function scopeOpens(s, p, activeWorktree, P) {
   return s.paths.includes(rel) || (!P.moneyNames.includes(baseName(p)) && s.paths.some((e) => isUnder(rel, e)));
 }
 
+// scribe's journal pages: a relative path under docs/journal/, and the names Claude Code reads as rules from any folder.
+const JOURNAL_PAGE = /^(?:[a-z0-9][\w-]*\/)*[a-z0-9][\w.-]*\.md$/;
+const RULE_PAGES = new Set(['claude.md', 'claude.local.md', 'agents.md']);
+// scribe's tools: an allow-list, fail closed. No shell (decide), no worktree, cron, skill, LSP or MCP tool.
+const SCRIBE_TOOLS = new Set(['Read', 'Grep', 'Glob', 'Write', 'Edit', 'MultiEdit', 'TodoWrite', 'ToolSearch', 'TaskCreate', 'TaskGet', 'TaskList', 'TaskUpdate']);
+
 // The decision for one normalized path. checkEdit runs it on the path as given and on its real path.
 function checkEditPath(seat, p, activeWorktree, P, scope) {
   if (!p) return block('unreadable', 'edit call without a file path');
@@ -315,6 +326,16 @@ function checkEditPath(seat, p, activeWorktree, P, scope) {
   }
   if (seat === 'checker') return block('seat-limits', 'angela and oscar never edit files');
   if (seat === 'pam') return block('seat-limits', 'pam never edits files; it changes tickets only through pms.cjs, with the drafts the orchestrator wrote');
+  // scribe build: after every block above, the path (checkEdit runs this on the given and the real path) must be under docs/journal/.
+  if (seat === 'scribe') {
+    if (!isUnder(p, P.journal)) return block('seat-limits', `scribe writes only journal pages, under ${P.journal} (the brief names them); everything else goes in its report`);
+    // Only plain Markdown pages: folders of letters, digits, _ and -, a page name of those
+    // and dots ending in .md (so no dot file, space, ~ short name, trailing dot, non-ASCII or : stream), and never a file Claude Code loads
+    // as rules from a nested folder. p is lower-cased by norm(); the real-path pass catches a short name such as CLAUDE~1.MD.
+    if (!JOURNAL_PAGE.test(p.slice(P.journal.length)) || RULE_PAGES.has(baseName(p)))
+      return block('seat-limits', `scribe writes only plain Markdown journal pages: folders and a name of letters, digits, _ and - (the name may hold dots) ending in .md, and no CLAUDE.md, CLAUDE.local.md or AGENTS.md (${p})`);
+    return ALLOW;
+  }
   if (seat === 'coder') {
     const wt = norm(activeWorktree);
     if (!wt) return block('seat-limits', 'there is no active worktree; the orchestrator runs wt-new.ps1 first');
@@ -1518,6 +1539,14 @@ function decide(call, opts = {}) {
   if (typeof tool !== 'string' || tool === '') return block('unreadable', 'hook input has no tool name');
   const named = checkToolName(seat, tool, input, P);
   if (named) return named;
+  // scribe has no shell and only its listed tools. Bash, PowerShell and Monitor by name,
+  // and any call that carries a command, get the no-shell message: the shared command rules below have holes a seat that writes files
+  // could use. Any other tool off the list (EnterWorktree makes a branch and a checkout, CronCreate, Skill, LSP, MCP, a new tool) is refused.
+  if (seat === 'scribe') {
+    if (/^(?:Bash|PowerShell|Monitor)$/.test(tool) || input.command !== undefined)
+      return block('seat-limits', 'scribe has no shell; its sources come in the brief (the commit lines too) and through Read, Grep and Glob');
+    if (!SCRIBE_TOOLS.has(tool)) return block('seat-limits', `scribe uses only Read, Grep, Glob, Write, Edit and its task list (${tool} is not one); report what else you need`);
+  }
   if (EDIT_TOOLS.has(tool)) {
     const active = 'activeWorktree' in opts ? opts.activeWorktree : readActiveWorktree(P);
     return checkEdit(seat, norm(input.file_path || input.notebook_path || '', cwd), active, P, () => coreScope(P, opts));

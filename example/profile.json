@@ -3,7 +3,7 @@
   "root": "C:/example-project",
   "defaultBranch": "main",
   "ticketPrefix": "ex",
-  "lanes": { "orchestrator": "ex-orchestrator", "coder": "ex-coder", "angela": "ex-angela", "oscar": "ex-oscar", "pam": "ex-pam" },
+  "lanes": { "orchestrator": "ex-orchestrator", "coder": "ex-coder", "angela": "ex-angela", "oscar": "ex-oscar", "pam": "ex-pam", "scribe": "ex-scribe" },
   "knowledgeDirs": [".agent", "docs"],
   "coreDirs": ["/src/core/"],
   "coreFiles": ["/src/payments.ts"],

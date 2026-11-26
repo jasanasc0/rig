@@ -103,7 +103,7 @@ try {
     $p = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\example\profile.json') -Raw | ConvertFrom-Json
     if ($project -eq 'sample') {
       $p.name = 'sample'; $p.ticketPrefix = 'sm'; $p.projectSettings = $true
-      foreach ($seat in 'orchestrator', 'coder', 'angela', 'oscar', 'pam') { $p.lanes.$seat = "sm-$seat" }
+      foreach ($seat in 'orchestrator', 'coder', 'angela', 'oscar', 'pam', 'scribe') { $p.lanes.$seat = "sm-$seat" }
     }
     $p.root = $roots[$project] -replace '\\', '/'
     [IO.File]::WriteAllText((Join-Path $rig "$project\profile.json"), ($p | ConvertTo-Json -Depth 5))

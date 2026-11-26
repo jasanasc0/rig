@@ -33,6 +33,7 @@ $flags = [ordered]@{
   angela = '--model fable --effort xhigh --permission-mode auto --disallowedTools Edit Write NotebookEdit Agent'
   oscar = '--model sonnet --effort medium --permission-mode auto --disallowedTools Edit Write NotebookEdit Agent'
   pam = '--model sonnet --effort medium --permission-mode auto --disallowedTools Edit Write NotebookEdit Agent'
+  scribe = '--model haiku --effort max --permission-mode auto --disallowedTools Bash PowerShell Monitor EnterWorktree ExitWorktree CronCreate NotebookEdit Agent' # the scribe build: no shell, no worktree or cron
 }
 $lanes = @{}
 function Lane($project, $seat) { $lanes[$project].$seat }
@@ -46,7 +47,7 @@ function Call { $args -join "`t" }
 function Show($calls) { @($calls | ForEach-Object { $_ -replace "`t", ' ' }) -join ' | ' }
 function Split($from, $direction, $project) { Call pane split $from --direction $direction --cwd $roots[$project] --no-focus }
 function Launch($project, $seat, $pane) { (@('agent', 'start', (Lane $project $seat), '--kind', 'claude', '--pane', $pane, '--') + (ClaudeArgs $project $seat)) -join "`t" }
-function Gets($project) { foreach ($seat in 'coder', 'angela', 'oscar', 'pam') { Call agent get (Lane $project $seat) } }
+function Gets($project) { foreach ($seat in 'coder', 'angela', 'oscar', 'pam', 'scribe') { Call agent get (Lane $project $seat) } }
 function Pane($id, $tab, $name) {
   $p = [ordered]@{ pane_id = $id; tab_id = $tab; workspace_id = $id.Split(':')[0] }
   if ($name) { $p.agent = 'claude'; $p.name = $name; $p.agent_status = 'idle' }
@@ -61,12 +62,13 @@ function Base {
     tabs = @((Tab 'w1:t1' '1'), (Tab 'w1:t2' 'seats'), (Tab 'w2:t1' '1'), (Tab 'w2:t2' 'seats'))
   }
 }
-# Base with lanes already running (pane id -> seat): pam in the seats tab's pane, the others in new panes of tab 1.
+# Base with lanes already running (pane id -> seat): pam in the seats tab's pane, scribe in a new pane of the seats tab, the others in new
+# panes of tab 1.
 function Running($project, $map) {
   $s = Base
   foreach ($id in $map.Keys) {
     $p = @($s.panes | Where-Object { $_.pane_id -eq $id })[0]
-    if (-not $p) { $p = Pane $id ($id.Split(':')[0] + ':t1'); $s.panes += $p }
+    if (-not $p) { $p = Pane $id ($id.Split(':')[0] + $(if ($map[$id] -eq 'scribe') { ':t2' } else { ':t1' })); $s.panes += $p }
     $p.agent = 'claude'; $p.name = Lane $project $map[$id]; $p.agent_status = 'idle'
   }
   $s
@@ -135,34 +137,37 @@ try {
     [IO.File]::WriteAllText((Join-Path $rig "$project\profile.json"), ($p | ConvertTo-Json -Depth 5))
   }
   $reads = @(Gets 'example') + @((Call tab list), (Call pane list))
-  $all = @((Split 'w1:p1' right example), (Launch example coder 'w1:p6'), (Split 'w1:p6' down example), (Launch example angela 'w1:p7'), (Split 'w1:p7' right example), (Launch example oscar 'w1:p8'), (Launch example pam 'w1:p5'))
+  $all = @((Split 'w1:p1' right example), (Launch example coder 'w1:p6'), (Split 'w1:p6' down example), (Launch example angela 'w1:p7'), (Split 'w1:p7' right example), (Launch example oscar 'w1:p8'), (Launch example pam 'w1:p5'), (Split 'w1:p5' down example), (Launch example scribe 'w1:p9'))
 
   # (a) No lane runs: tab 1 gets coder right of the orchestrator, angela below coder, oscar right of angela, each in the project's root; pam
-  # starts in the seats tab's pane. Every lane has its own flags and its project's rules; one line each; exit 0.
+  # starts in the seats tab's pane, and scribe in a pane split down from pam's (the scribe build). Every lane has its own flags and its
+  # project's rules; one line each; exit 0.
   $r = Invoke-Lanes (Base) 'example'
-  Check ((Show $r.Calls) -ceq (Show ($reads + $all))) "(a) no lane runs: four agent gets, tab list, pane list, then three splits and four starts ($(Show $r.Calls))"
+  Check ((Show $r.Calls) -ceq (Show ($reads + $all))) "(a) no lane runs: five agent gets, tab list, pane list, then four splits and five starts ($(Show $r.Calls))"
   Check-Lane $r 'example' 'coder' 'w1:p6' '(a)'
   Check-Lane $r 'example' 'angela' 'w1:p7' '(a)'
   Check-Lane $r 'example' 'oscar' 'w1:p8' '(a)'
   Check-Lane $r 'example' 'pam' 'w1:p5' '(a)'
+  Check-Lane $r 'example' 'scribe' 'w1:p9' '(a)'
+  Check ((P $r.State 'w1:p9').tab_id -ceq 'w1:t2' -and (P $r.State 'w1:p9').cwd -ceq $roots.example -and $r.Out -match 'scribe: started in w1:p9') '(a) scribe: its pane is in the seats tab, opens in the root, and its line says started'
   Check (@('w1:p6', 'w1:p7', 'w1:p8' | Where-Object { (P $r.State $_).tab_id -ceq 'w1:t1' -and (P $r.State $_).cwd -ceq $roots.example }).Count -eq 3) '(a) the three new panes are in tab 1 and open in the root'
   Check ($r.Code -eq 0 -and $r.Out -match 'coder: started in w1:p6' -and $r.Out -match 'angela: started in w1:p7' -and $r.Out -match 'oscar: started in w1:p8' -and $r.Out -match 'pam: started in w1:p5') "(a) exit 0, one line per lane ($($r.Code))"
   Check-Space $r '(a)' 'w2'
 
   # (b) Every lane runs in this space: nothing is split or started; pane list is not read; exit 0.
-  $r = Invoke-Lanes (Running 'example' ([ordered]@{ 'w1:p2' = 'coder'; 'w1:p3' = 'angela'; 'w1:p4' = 'oscar'; 'w1:p5' = 'pam' })) 'example'
+  $r = Invoke-Lanes (Running 'example' ([ordered]@{ 'w1:p2' = 'coder'; 'w1:p3' = 'angela'; 'w1:p4' = 'oscar'; 'w1:p5' = 'pam'; 'w1:p6' = 'scribe' })) 'example'
   Check ((Show $r.Calls) -ceq (Show (@(Gets 'example') + (Call tab list)))) "(b) every lane runs: only the reads ($(Show $r.Calls))"
-  Check ($r.Code -eq 0 -and $r.Out -match 'coder: running in w1:p2' -and $r.Out -match 'pam: running in w1:p5') "(b) exit 0, each lane said running with its pane ($($r.Code))"
+  Check ($r.Code -eq 0 -and $r.Out -match 'coder: running in w1:p2' -and $r.Out -match 'pam: running in w1:p5' -and $r.Out -match 'scribe: running in w1:p6') "(b) exit 0, each lane said running with its pane ($($r.Code))"
 
   # (c) Only angela is missing: she is split below coder's pane, nothing else moves.
-  $r = Invoke-Lanes (Running 'example' ([ordered]@{ 'w1:p2' = 'coder'; 'w1:p4' = 'oscar'; 'w1:p5' = 'pam' })) 'example'
-  Check ((Show $r.Acts) -ceq (Show @((Split 'w1:p2' down example), (Launch example angela 'w1:p6')))) "(c) angela missing: split coder's pane down, start angela there ($(Show $r.Acts))"
-  Check-Lane $r 'example' 'angela' 'w1:p6' '(c)'
+  $r = Invoke-Lanes (Running 'example' ([ordered]@{ 'w1:p2' = 'coder'; 'w1:p4' = 'oscar'; 'w1:p5' = 'pam'; 'w1:p6' = 'scribe' })) 'example'
+  Check ((Show $r.Acts) -ceq (Show @((Split 'w1:p2' down example), (Launch example angela 'w1:p7')))) "(c) angela missing: split coder's pane down, start angela there ($(Show $r.Acts))"
+  Check-Lane $r 'example' 'angela' 'w1:p7' '(c)'
   Check ($r.Code -eq 0) "(c) exit 0 ($($r.Code))"
 
   # (d) Only coder is missing: he is split right of the orchestrator's own pane.
-  $r = Invoke-Lanes (Running 'example' ([ordered]@{ 'w1:p3' = 'angela'; 'w1:p4' = 'oscar'; 'w1:p5' = 'pam' })) 'example'
-  Check ((Show $r.Acts) -ceq (Show @((Split 'w1:p1' right example), (Launch example coder 'w1:p6')))) "(d) coder missing: split the own pane right, start coder ($(Show $r.Acts))"
+  $r = Invoke-Lanes (Running 'example' ([ordered]@{ 'w1:p3' = 'angela'; 'w1:p4' = 'oscar'; 'w1:p5' = 'pam'; 'w1:p6' = 'scribe' })) 'example'
+  Check ((Show $r.Acts) -ceq (Show @((Split 'w1:p1' right example), (Launch example coder 'w1:p7')))) "(d) coder missing: split the own pane right, start coder ($(Show $r.Acts))"
 
   # (e) herdr answers agent_not_ready for angela (a dialog waits in her pane): said, she counts as started, oscar still splits from her pane.
   $s = Base
@@ -228,9 +233,10 @@ try {
 
   # (l) sample from its own space w2: sm- names, no --setting-sources (its projectSettings is true), its own rules; nothing names w1.
   $r = Invoke-Lanes (Base) 'sample' 'w2:p1' 'w2:t1'
-  Check ((Show $r.Acts) -ceq (Show @((Split 'w2:p1' right sample), (Launch sample coder 'w2:p6'), (Split 'w2:p6' down sample), (Launch sample angela 'w2:p7'), (Split 'w2:p7' right sample), (Launch sample oscar 'w2:p8'), (Launch sample pam 'w2:p5')))) "(l) sample: its four lanes in w2 ($(Show $r.Acts))"
+  Check ((Show $r.Acts) -ceq (Show @((Split 'w2:p1' right sample), (Launch sample coder 'w2:p6'), (Split 'w2:p6' down sample), (Launch sample angela 'w2:p7'), (Split 'w2:p7' right sample), (Launch sample oscar 'w2:p8'), (Launch sample pam 'w2:p5'), (Split 'w2:p5' down sample), (Launch sample scribe 'w2:p9')))) "(l) sample: its five lanes in w2 ($(Show $r.Acts))"
   Check-Lane $r 'sample' 'coder' 'w2:p6' '(l)'
   Check-Lane $r 'sample' 'pam' 'w2:p5' '(l)'
+  Check-Lane $r 'sample' 'scribe' 'w2:p9' '(l)'
   Check-Space $r '(l)' 'w1'
 
   # (m) A root with a blank and a trailing slash reaches herdr as one word.
@@ -293,6 +299,51 @@ try {
   $s.panes += Pane 'w2:p4' 'w2:t2' 'ex-pam'
   $r = Invoke-Lanes $s 'example'
   Check ($r.Code -eq 1 -and $r.Out -match 'pam: runs in another herdr space \(w2\)' -and -not @($r.Acts | Where-Object { $_ -match "^agent`tstart`tex-pam`t" }) -and -not @($r.Calls | Where-Object { $_ -ceq (Call pane list) })) "(s) pam in w2: not started, said, exit 1, no pane list ($($r.Code))"
+  # The scribe build: scribe starts in a pane split down from pam's, only once pam's pane is known; the seats tab holds
+  # up to 2 panes, pam's and scribe's.
+  # (u) Only scribe is missing, pam runs in the seats tab's pane: pam's pane is split down and scribe starts there; nothing else moves.
+  $r = Invoke-Lanes (Running 'example' ([ordered]@{ 'w1:p2' = 'coder'; 'w1:p3' = 'angela'; 'w1:p4' = 'oscar'; 'w1:p5' = 'pam' })) 'example'
+  Check ((Show $r.Acts) -ceq (Show @((Split 'w1:p5' down example), (Launch example scribe 'w1:p6')))) "(u) scribe missing, pam running: split pam's pane down, start scribe ($(Show $r.Acts))"
+  Check-Lane $r 'example' 'scribe' 'w1:p6' '(u)'
+  Check ($r.Code -eq 0 -and (P $r.State 'w1:p6').tab_id -ceq 'w1:t2' -and $r.Out -match 'pam: running in w1:p5' -and $r.Out -match 'scribe: started in w1:p6') "(u) exit 0, scribe's pane in the seats tab ($($r.Code))"
+  # (v) pam is missing while scribe runs in the seats tab: reported, not repaired: no pam start, no split; exit 1.
+  $s = Running 'example' ([ordered]@{ 'w1:p2' = 'coder'; 'w1:p3' = 'angela'; 'w1:p4' = 'oscar'; 'w1:p6' = 'scribe' })
+  $r = Invoke-Lanes $s 'example'
+  Check ($r.Code -eq 1 -and $r.Acts.Count -eq 0 -and $r.Out -match 'ex-pam: not started: ex-scribe runs in w1:p6 without ex-pam' -and $r.Out -match 'scribe: running in w1:p6') "(v) pam missing, scribe running: said, nothing started or split, exit 1 ($($r.Code), $(Show $r.Acts))"
+  $s.panes = @($s.panes | Where-Object { $_.pane_id -ne 'w1:p5' }) # pam's pane gone too: scribe alone in the seats tab
+  $r = Invoke-Lanes $s 'example'
+  Check ($r.Code -eq 1 -and $r.Acts.Count -eq 0 -and $r.Out -match 'ex-pam: not started: ex-scribe runs in w1:p6 without ex-pam') "(v) pam and its pane gone, scribe alone in the seats tab: said, nothing started, exit 1 ($($r.Code))"
+  # (w) pam runs, scribe is missing, and the seats tab holds pam plus one more pane that is not scribe: scribe is not
+  # started and nothing is split; said, exit 1. The same when pam runs outside the seats tab.
+  $s = Running 'example' ([ordered]@{ 'w1:p2' = 'coder'; 'w1:p3' = 'angela'; 'w1:p4' = 'oscar'; 'w1:p5' = 'pam' })
+  $s.panes += Pane 'w1:p9' 'w1:t2'
+  $r = Invoke-Lanes $s 'example'
+  Check ($r.Code -eq 1 -and $r.Acts.Count -eq 0 -and $r.Out -match 'scribe: not started: the seats tab \(w1:t2\) holds 2 panes') "(w) a stray pane beside pam in the seats tab: no scribe, no split, said, exit 1 ($($r.Code), $(Show $r.Acts))"
+  $s = Running 'example' ([ordered]@{ 'w1:p2' = 'coder'; 'w1:p3' = 'angela'; 'w1:p4' = 'oscar'; 'w1:p7' = 'pam' })
+  $r = Invoke-Lanes $s 'example'
+  Check ($r.Code -eq 1 -and $r.Acts.Count -eq 0 -and $r.Out -match 'ex-scribe: not started: ex-pam runs in w1:p7, outside the seats tab') "(w) pam running in tab 1: no scribe, no split, said, exit 1 ($($r.Code), $(Show $r.Acts))"
+  # (x) scribe's name runs in another space (w2): not started here, said, exit 1; nothing is split for it.
+  $s = Running 'example' ([ordered]@{ 'w1:p2' = 'coder'; 'w1:p3' = 'angela'; 'w1:p4' = 'oscar'; 'w1:p5' = 'pam' })
+  $s.panes += Pane 'w2:p6' 'w2:t2' 'ex-scribe'
+  $r = Invoke-Lanes $s 'example'
+  Check ($r.Code -eq 1 -and $r.Acts.Count -eq 0 -and $r.Out -match 'scribe: runs in another herdr space \(w2\)') "(x) scribe in w2: not started, said, exit 1 ($($r.Code))"
+  # (y) pam's start fails: scribe is not started (its pane splits from pam's, which runs no pam), said, exit 1.
+  $s = Base
+  $s.canned = @{ ((Launch example pam 'w1:p5') -replace "`t", ' ') = 'server_busy' }
+  $r = Invoke-Lanes $s 'example'
+  Check ($r.Code -eq 1 -and -not @($r.Acts | Where-Object { $_ -ceq (Split 'w1:p5' down example) -or $_ -match "^agent`tstart`tex-scribe`t" }) -and $r.Out -match 'ex-scribe: not started: ex-pam is not running in this space') "(y) pam's start fails: no scribe, no split of pam's pane, said, exit 1 ($($r.Code))"
+  # (z) scribe's start fails: the pane split for it is closed again; pam stays.
+  $s = Running 'example' ([ordered]@{ 'w1:p2' = 'coder'; 'w1:p3' = 'angela'; 'w1:p4' = 'oscar'; 'w1:p5' = 'pam' })
+  $s.canned = @{ ((Launch example scribe 'w1:p6') -replace "`t", ' ') = 'server_busy' }
+  $r = Invoke-Lanes $s 'example'
+  Check ($r.Code -eq 1 -and $r.Out -match 'scribe: not started: .*server_busy.*closed again' -and $null -eq (P $r.State 'w1:p6') -and $null -ne (P $r.State 'w1:p5')) "(z) scribe's start fails: said, its split pane closed again, pam's pane stays, exit 1 ($($r.Code))"
+  # (aa) pam runs and scribe is missing, and pane list can't be read: that is scribe's problem only; coder, angela and
+  # oscar still start; scribe is said and not started, nothing is split for it; exit 1.
+  $s = Running 'example' ([ordered]@{ 'w1:p5' = 'pam' })
+  $s.canned = @{ 'pane list' = 'oops' }
+  $r = Invoke-Lanes $s 'example'
+  Check ((Show $r.Acts) -ceq (Show @((Split 'w1:p1' right example), (Launch example coder 'w1:p6'), (Split 'w1:p6' down example), (Launch example angela 'w1:p7'), (Split 'w1:p7' right example), (Launch example oscar 'w1:p8')))) "(aa) pane list unreadable, only scribe needed it: tab 1 still starts, nothing split for scribe ($(Show $r.Acts))"
+  Check ($r.Code -eq 1 -and $r.Out -match 'scribe: not started: herdr pane list gave no panes' -and $r.Out -match 'pam: running in w1:p5') "(aa) scribe's line names the failed pane list, exit 1 ($($r.Code))"
 } catch {
   # A terminating error must not let the run fall through to "all checks passed": count it and report it.
   "FAIL self-test aborted: $($_.Exception.Message)"

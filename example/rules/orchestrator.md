@@ -6,7 +6,7 @@ The rig is Jas's own, not the project's: never mention it in commits, PRs, the P
 
 ## On startup
 1. Read what the Refocus hook printed: `now.md`, the newest handoff's Start here block, and any `[rig] WARNING` lines.
-2. Start the lanes with `lanes.ps1` (see "Starting lanes"). Your lanes are `ex-coder`, `ex-angela`, `ex-oscar` and `ex-pam`; a lane with any other name belongs to another project's rig, and the guard blocks you from prompting it.
+2. Start the lanes with `lanes.ps1` (see "Starting lanes"). Your lanes are `ex-coder`, `ex-angela`, `ex-oscar`, `ex-pam` and `ex-scribe`; a lane with any other name belongs to another project's rig, and the guard blocks you from prompting it.
 3. Tell Jas every `[rig] WARNING` line word for word first, and name every `FILL IN:` paragraph still in this file (each is his to write). Then in 3 lines: current mission, current ticket, and what you propose next.
 
 ## The project
@@ -25,10 +25,11 @@ FILL IN: risky areas. Where a green suite proves little here (code with no tests
 - `ex-angela`: adversarial review with proof; never writes. After every ex-coder change.
 - `ex-oscar`: the gate (the commands under The project) and the proof check; never edits. After ex-angela approves (on a core ticket, once after the last task).
 - `ex-pam`: posts the PMS updates you draft, after Jas says "post" (see PMS board); reads each ticket's whole history first and flags what contradicts the draft; never edits files. On tab 2. With no PMS board, ex-pam starts but gets no brief.
+- `ex-scribe`: keeps the work journal in `docs/journal/` (see End of shift): a day page from each shift's handoff, the week page on Fridays, the monthly draft at a month's end, each fact linked to its source; writes only there. On tab 2, below ex-pam.
 - In reserve, not seated: jim (post-deploy checks). Adding a seat is Jas's call.
 
 ## Starting lanes
-`lanes.ps1` starts every lane that isn't running, in your herdr space, each in the project's root: ex-coder, ex-angela and ex-oscar in tab 1 beside your pane, ex-pam in the `seats` tab `rig.ps1` opened. Run it at startup, and whenever `herdr agent list` shows one of your lanes missing, from the PowerShell tool with its timeout at 600000:
+`lanes.ps1` starts every lane that isn't running, in your herdr space, each in the project's root: ex-coder, ex-angela and ex-oscar in tab 1 beside your pane, ex-pam in the `seats` tab `rig.ps1` opened, and ex-scribe below ex-pam. Run it at startup, and whenever `herdr agent list` shows one of your lanes missing, from the PowerShell tool with its timeout at 600000:
 ```
 & '{{RIG}}/bin/lanes.ps1' example
 ```
@@ -146,9 +147,9 @@ When the rotation hook says your context is over its limit: finish the current s
 
 ## End of shift ("close")
 When Jas says "close" (or "close anyway"), the shift ends: every lane, the `seats` tab (if only your lanes were in it) and your own pane close, in this herdr space only. (Closing one ticket after a merge is step 7 of the loop; if you can't tell which one Jas means, ask.)
-1. Run `herdr agent get <lane>` for each of your lanes: `ex-coder`, `ex-angela`, `ex-oscar` and `ex-pam`. Any lane `working`, `blocked` (waiting on an approval) or `unknown`: name it and stop, unless Jas said "close anyway".
+1. Run `herdr agent get <lane>` for each of your lanes: `ex-coder`, `ex-angela`, `ex-oscar`, `ex-pam` and `ex-scribe`. Any lane `working`, `blocked` (waiting on an approval) or `unknown`: name it and stop, unless Jas said "close anyway".
 2. Read `{{RIG}}/example/active-worktree` with the Read tool. If it names a worktree, run `git -C <that path> status --short` and name any uncommitted files (they stay on disk).
-3. Write the shift handoff as in Rotation (a new `.agent/handoffs/YYYY-MM-DD_PROMPT_next_shift.md` with its Start here block, but not its "Handoff written, type /clear." line: the shift ends with step 5), bring `now.md` up to date, and append the `log.md` line (step 6's format) if a task ended this shift without one.
+3. Write the shift handoff as in Rotation (a new `.agent/handoffs/YYYY-MM-DD_PROMPT_next_shift.md` with its Start here block, but not its "Handoff written, type /clear." line: the shift ends with step 5), bring `now.md` up to date, and append the `log.md` line (step 6's format) if a task ended this shift without one. Then, unless `{{RIG}}/example/rules/seats/scribe.md` still holds its `FILL IN:` journal paragraph (then skip this brief and tell Jas the journal is not set up), brief `ex-scribe` (`{{RIG}}/example/work/briefs/ex-scribe-<yyyyMMdd>.md`) to write today's day page, `docs/journal/days/<YYYY-MM-DD>.md`, from that handoff and today's commits; on a Friday also the week page, and on the last working day of a month also the monthly draft. The brief carries the commit lines for the dates it covers, which you run yourself (ex-scribe has no shell): `git log --since <first day> --until <the day after the last> --format="%h %as %s"`. Send it as a background command, as Talking to lanes says (`herdr agent prompt ex-scribe "Read <brief path> and do it." --wait --timeout 3600000`); wait until it is done and read its report before step 4, so `close.ps1` never meets a working ex-scribe: `herdr agent read ex-scribe --source recent-unwrapped --lines 400 | node {{RIG}}/bin/report.cjs` (no `--ticket`: its report starts with `Brief:`). Check every number of a monthly draft against the source it links before you tell Jas.
 4. Your last message to Jas: what will close, the handoff path, any uncommitted files, and "closing now".
 5. Your final tool call, from the PowerShell tool with its timeout at 600000 (each lane may take up to 30 s to exit): `& '{{RIG}}/bin/close.ps1' example` (add `-Force` only after Jas said "close anyway"). Nothing comes after it: the script ends each lane with `/exit`, closes its pane, then the `seats` tab (if only your lanes were in it), then your pane. If it refuses (a lane is working, waiting on an approval, or unknown; or herdr did not answer), it closed nothing: tell Jas what it printed. If your pane is still open after it ran, tell Jas what it printed and close nothing yourself.
 Never close a pane or a tab yourself or send a lane `/exit`: only `close.ps1` does (the guard blocks them).
@@ -158,7 +159,7 @@ Never close a pane or a tab yourself or send a lane `/exit`: only `close.ps1` do
 - Stay in the main checkout: never use EnterWorktree yourself.
 - Never `cd` (or `Set-Location`, `pushd`) into a worktree: read one with `git -C <worktree path> ...` or the Read tool (the guard blocks the `cd`).
 - You never run a file you wrote; a script you write runs outside the guard with Jas's permissions. You run only `pms.cjs`, `report.cjs`, `refocus.cjs`, the two `wt-*.ps1` scripts, `lanes.ps1` and `close.ps1` (only at Jas's "close", see End of shift), and `pms.cjs` never with `--live` (ex-pam posts). The guard blocks any other file, the project's `scripts/` included.
-- Prompt and start only your own lanes, `ex-coder`, `ex-angela`, `ex-oscar` and `ex-pam`, and give the worktree scripts only `ex<n>-<slug>` names.
+- Prompt and start only your own lanes, `ex-coder`, `ex-angela`, `ex-oscar`, `ex-pam` and `ex-scribe`, and give the worktree scripts only `ex<n>-<slug>` names.
 - Never answer a lane's approval dialog or on-screen question for it (a report's `Question:` line is different: you answer it from the brief, plan or handoff, or ask Jas — see Talking to lanes).
 - A guard block is on purpose. Don't work around it; tell Jas which rule blocked what.
 - Your boundary: you write only in the project's knowledge folders (the profile's `knowledgeDirs`, in its main checkout), the rig's `work\` folder (never a `.obsidian\` folder), your own Claude memory folder and Claude's scratchpad, and you run only the files listed above. These rules hold whether or not the guard blocks: it is a text filter that misses some spellings, so a command it lets through is not a permission. A way past it, or a place these rules keep from you that you find you can reach: don't use it and don't probe for more; tell Jas in plain words what you found.

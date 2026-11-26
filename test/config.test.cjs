@@ -27,6 +27,7 @@ const SEATS = {
   angela: { guard: 'checker', off: PLUGINS, on: [], rotation: false, ponytail: 'off' },
   oscar: { guard: 'checker', off: PLUGINS, on: [], rotation: false, ponytail: 'off' },
   pam: { guard: 'pam', off: PLUGINS, on: [], rotation: false, ponytail: 'off' }, // pam build: oscar's settings with its own guard seat
+  scribe: { guard: 'scribe', off: PLUGINS, on: [], rotation: false, ponytail: 'off' }, // scribe build: pam's settings with its own guard seat, briefs only
 };
 
 let total = 0;
@@ -170,6 +171,7 @@ const exampleJson = (() => {
 })();
 check(`example's profile loads through the guard's validator${typeof exampleProfile === 'string' ? ' (' + exampleProfile + ')' : ''}`, typeof exampleProfile === 'object' && exampleProfile.name === 'example');
 check('pam build: example names its pam lane, ex-pam', Boolean(exampleJson && exampleJson.lanes) && exampleJson.lanes.pam === 'ex-pam');
+check('scribe build: example names its scribe lane, ex-scribe', Boolean(exampleJson && exampleJson.lanes) && exampleJson.lanes.scribe === 'ex-scribe');
 check('settingsrc: example has projectSettings false', Boolean(exampleJson) && exampleJson.projectSettings === false);
 
 // V4-R5: lane names (every value of every profile's lanes), ticket prefixes and roots are unique across every <rig>/*/profile.json, and no

@@ -2,8 +2,9 @@
 # tool at startup and whenever a lane is missing:
 #   & '<rig>\bin\lanes.ps1' <project>
 # Tab 1: coder right of the orchestrator's pane, angela below coder, oscar right of angela, each in the project's root; tab 2: pam in the
-# one pane of this space's seats tab (rig.ps1 opens it; this script never opens a tab). A lane already running in this space is left alone
-# and its pane anchors the next split. Everything that can stop it is checked before anything starts: the project, the guard's verdict on
+# first pane of this space's seats tab (rig.ps1 opens it; this script never opens a tab), scribe in a pane split down from pam's (the scribe
+# build). A lane already running in this space is left alone and its pane anchors the next split. Everything that can stop it is checked
+# before anything starts: the project, the guard's verdict on
 # its profile, the caller context herdr sets in every pane it manages (HERDR_ENV, HERDR_PANE_ID, HERDR_TAB_ID, HERDR_WORKSPACE_ID), and
 # herdr's answers about the lanes, the tabs and the panes. A lane it can't start is said and the others still start. One line per lane;
 # exit 1 when a lane is not running at the end. The guard lets only the orchestrator run it, with exactly its own project's name, and
@@ -40,6 +41,7 @@ try {
     angela = '--model', 'fable', '--effort', 'xhigh', '--permission-mode', 'auto', '--disallowedTools', 'Edit', 'Write', 'NotebookEdit', 'Agent'
     oscar = '--model', 'sonnet', '--effort', 'medium', '--permission-mode', 'auto', '--disallowedTools', 'Edit', 'Write', 'NotebookEdit', 'Agent'
     pam = '--model', 'sonnet', '--effort', 'medium', '--permission-mode', 'auto', '--disallowedTools', 'Edit', 'Write', 'NotebookEdit', 'Agent' # oscar's (pam build)
+    scribe = '--model', 'haiku', '--effort', 'max', '--permission-mode', 'auto', '--disallowedTools', 'Bash', 'PowerShell', 'Monitor', 'EnterWorktree', 'ExitWorktree', 'CronCreate', 'NotebookEdit', 'Agent' # the scribe build: no shell, no worktree or cron; Edit and Write fenced by the guard
   }
   # A lane's claude arguments: its herdr name as the session name (the prompt bar and the status line show it), --setting-sources user,local
   # where projectSettings is false (the repo's own settings and hooks stay out), its flags, then its project's settings
@@ -76,7 +78,7 @@ try {
   # Where each lane runs now, by its herdr agent name. A lane herdr answers agent_not_found for is not running; any other failed answer
   # stops the run before anything starts.
   $where = @{}
-  foreach ($seat in 'coder', 'angela', 'oscar', 'pam') {
+  foreach ($seat in 'coder', 'angela', 'oscar', 'pam', 'scribe') {
     $r = Invoke-Herdr agent get $p.lanes.$seat
     if (-not $r.Ok -and $r.Says -match 'agent_not_found') { continue }
     if (-not $r.Ok -or -not $r.Result.agent.pane_id -or -not $r.Result.agent.workspace_id) { throw "herdr could not say where $($p.lanes.$seat) runs: $($r.Says). Nothing was started." }
@@ -90,23 +92,36 @@ try {
   if (@($seatsTabs | Where-Object { $_.tab_id -ceq $ownTab }).Count) {
     throw "This pane ($own) is in the seats tab ($ownTab), where the tab-1 lanes would split. Start the rig from a pane in another tab of this space; nothing was started."
   }
-  # pam's pane, when pam has to start: the one pane of the seats tab, with no agent in it. Anything else is said on pam's line.
-  $pamPane = $null
-  $pamProblem = $null
-  if (-not $where.pam) {
+  # The seats tab's panes, read when pam has to start, or scribe has to start below a pam of this space (the scribe build). A missing or
+  # doubled seats tab is said on the line of each lane that needed it.
+  $here = { param($a) $a -and $a.workspace_id -ceq $space }
+  $seatsProblem = $null
+  $tab = $null
+  $in = @()
+  if (-not $where.pam -or (-not $where.scribe -and (& $here $where.pam))) {
     $r = Invoke-Herdr pane list
-    if ($null -eq $r.Result.panes) { throw "herdr pane list gave no panes: $($r.Says). Nothing was started." }
-    if ($seatsTabs.Count -eq 0) {
-      $pamProblem = "this space ($space) has no seats tab. Ask Jas to run, in a pane that is not a lane: herdr tab create --workspace $space --cwd '$root' --label seats --no-focus; then run lanes.ps1 again"
+    # pam needs the list to start; when only scribe does (pam runs), a failed list is scribe's problem alone and tab 1 still starts.
+    if ($null -eq $r.Result.panes -and -not $where.pam) { throw "herdr pane list gave no panes: $($r.Says). Nothing was started." }
+    if ($null -eq $r.Result.panes) { $seatsProblem = "herdr pane list gave no panes ($($r.Says)); tell Jas" }
+    elseif ($seatsTabs.Count -eq 0) {
+      $seatsProblem = "this space ($space) has no seats tab. Ask Jas to run, in a pane that is not a lane: herdr tab create --workspace $space --cwd '$root' --label seats --no-focus; then run lanes.ps1 again"
     } elseif ($seatsTabs.Count -gt 1) {
-      $pamProblem = "this space ($space) has $($seatsTabs.Count) seats tabs ($(@($seatsTabs | ForEach-Object { $_.tab_id }) -join ', ')); tell Jas"
+      $seatsProblem = "this space ($space) has $($seatsTabs.Count) seats tabs ($(@($seatsTabs | ForEach-Object { $_.tab_id }) -join ', ')); tell Jas"
     } else {
       $tab = $seatsTabs[0].tab_id
       $in = @($r.Result.panes | Where-Object { $_.tab_id -ceq $tab })
-      if ($in.Count -ne 1) { $pamProblem = "the seats tab ($tab) holds $($in.Count) panes; tell Jas" }
-      elseif ($in[0].agent) { $pamProblem = "the seats tab ($tab) holds an agent (in $($in[0].pane_id)); tell Jas" }
-      else { $pamPane = $in[0].pane_id }
     }
+  }
+  # pam's pane, when pam has to start: the one pane of the seats tab, with no agent in it. A scribe of this space without pam is said, never
+  # repaired (scribe's pane splits from pam's). Anything else is said on pam's line.
+  $pamPane = $null
+  $pamProblem = $null
+  if (-not $where.pam) {
+    if ($seatsProblem) { $pamProblem = $seatsProblem }
+    elseif (& $here $where.scribe) { $pamProblem = "$($p.lanes.scribe) runs in $($where.scribe.pane_id) without $($p.lanes.pam): $($p.lanes.pam) is not started beside it; tell Jas" }
+    elseif ($in.Count -ne 1) { $pamProblem = "the seats tab ($tab) holds $($in.Count) panes; tell Jas" }
+    elseif ($in[0].agent) { $pamProblem = "the seats tab ($tab) holds an agent (in $($in[0].pane_id)); tell Jas" }
+    else { $pamPane = $in[0].pane_id }
   }
 
   # Tab 1, in order; each pane whose lane runs anchors the next split, so the layout is the same whichever lanes were missing.
@@ -132,7 +147,26 @@ try {
   else {
     $s = Start-Lane 'pam' $pamPane
     $s.Line
-    if (-not $s.Ok) { $problems++ }
+    if ($s.Ok) { $where.pam = [pscustomobject]@{ pane_id = $pamPane; workspace_id = $space } } else { $problems++ }
+  }
+  # Tab 2: scribe below pam (the scribe build), in a pane split down from pam's, only once pam runs in this space's seats tab and that tab
+  # holds pam's pane alone; anything else is said, never repaired.
+  $lane = $p.lanes.scribe
+  if (& $here $where.scribe) { "${lane}: running in $($where.scribe.pane_id)" }
+  elseif ($where.scribe) { "${lane}: runs in another herdr space ($($where.scribe.workspace_id)): not started here; tell Jas"; $problems++ }
+  elseif (-not (& $here $where.pam)) { "${lane}: not started: $($p.lanes.pam) is not running in this space, and ${lane}'s pane splits from its pane; tell Jas"; $problems++ }
+  elseif ($seatsProblem) { "${lane}: not started: $seatsProblem"; $problems++ }
+  elseif (-not @($in | Where-Object { $_.pane_id -ceq $where.pam.pane_id }).Count) { "${lane}: not started: $($p.lanes.pam) runs in $($where.pam.pane_id), outside the seats tab ($tab); tell Jas"; $problems++ }
+  elseif ($in.Count -ne 1) { "${lane}: not started: the seats tab ($tab) holds $($in.Count) panes, $($p.lanes.pam)'s and $(@($in | Where-Object { $_.pane_id -cne $where.pam.pane_id } | ForEach-Object { $_.pane_id }) -join ', '); tell Jas"; $problems++ }
+  else {
+    $r = Invoke-Herdr pane split $where.pam.pane_id --direction down --cwd $root --no-focus
+    $pane = $r.Result.pane.pane_id
+    if (-not $pane) { "${lane}: not started: herdr pane split gave no pane ($($r.Says)); tell Jas"; $problems++ }
+    else {
+      $s = Start-Lane 'scribe' $pane -Split
+      $s.Line
+      if (-not $s.Ok) { $problems++ }
+    }
   }
 
   if ($problems) { "$problems lane(s) of $Project not running: tell Jas the lines above."; exit 1 }

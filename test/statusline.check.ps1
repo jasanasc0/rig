@@ -94,6 +94,9 @@ try {
     # review-pam M8: pam's lane (lanes.pam: example's ex-pam, sample's sm-pam) shows its shield and its project's ticket, with pam's settings.
     Run 'W ex-pam'                   (J 'ex-pam' $exDir 49) $null $wt $null 'GITNEXUS=on SUPERPOWERS=off ADHD=off PONYTAIL=off shield ticket:EX-567 42m ctx:2 exit:0' $pgWt
     Run 'X sm-pam'                   (J 'sm-pam' $pgDir 49) $null $wt $null 'GITNEXUS=on SUPERPOWERS=off ADHD=off PONYTAIL=off shield ticket:SM-12 7m ctx:2 exit:0' $pgWt
+    # The scribe build: scribe's lane (lanes.scribe: example's ex-scribe, sample's sm-scribe) the same way, with scribe's settings.
+    Run 'Y ex-scribe'                (J 'ex-scribe' $exDir 49) $null $wt $null 'GITNEXUS=on SUPERPOWERS=off ADHD=off PONYTAIL=off shield ticket:EX-567 42m ctx:2 exit:0' $pgWt
+    Run 'Z sm-scribe'                (J 'sm-scribe' $pgDir 49) $null $wt $null 'GITNEXUS=on SUPERPOWERS=off ADHD=off PONYTAIL=off shield ticket:SM-12 7m ctx:2 exit:0' $pgWt
     # Fix wave: a ticket prefix with a regex character is matched as text (P7-M1; the guard would refuse such a profile, the status line
     # reads profiles on its own), and a broken profile.json beside the real ones changes nothing (P7-M3: the same output as B).
     New-Item -ItemType Directory -Force (Join-Path $rig 'cpp\rules') | Out-Null

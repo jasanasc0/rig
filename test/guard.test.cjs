@@ -81,7 +81,7 @@ const SAMPLE = {
   root: SRF,
   defaultBranch: 'main',
   ticketPrefix: 'sm',
-  lanes: { orchestrator: 'sm-orchestrator', coder: 'sm-coder', angela: 'sm-angela', oscar: 'sm-oscar', pam: 'sm-pam' },
+  lanes: { orchestrator: 'sm-orchestrator', coder: 'sm-coder', angela: 'sm-angela', oscar: 'sm-oscar', pam: 'sm-pam', scribe: 'sm-scribe' },
   knowledgeDirs: ['.agent', 'docs'],
   coreDirs: ['/jobs/'],
   coreFiles: ['/lib/auth.ts', '/lib/limits.ts', '/config/deploy.json'],
@@ -2140,8 +2140,12 @@ try {
     ['three-lanes', variant('three-lanes', (p) => ({ ...p, lanes: { orchestrator: 'o', coder: 'c', angela: 'a' } })), '"lanes" is missing or wrong'],
     ['same-lanes', variant('same-lanes', (p) => ({ ...p, lanes: { orchestrator: 'o', coder: 'c', angela: 'c', oscar: 'x' } })), '"lanes" is missing or wrong'],
     // pam build (B.5): lanes.pam is required in every profile, and it is a fifth different name.
-    ['no-pam-lane', variant('no-pam-lane', (p) => ({ ...p, lanes: { orchestrator: 'o', coder: 'c', angela: 'a', oscar: 'x' } })), '"lanes" is missing or wrong'],
-    ['same-pam-lane', variant('same-pam-lane', (p) => ({ ...p, lanes: { orchestrator: 'o', coder: 'c', angela: 'a', oscar: 'x', pam: 'c' } })), '"lanes" is missing or wrong'],
+    ['no-pam-lane', variant('no-pam-lane', (p) => ({ ...p, lanes: { orchestrator: 'o', coder: 'c', angela: 'a', oscar: 'x', scribe: 's' } })), '"lanes" is missing or wrong'],
+    ['same-pam-lane', variant('same-pam-lane', (p) => ({ ...p, lanes: { orchestrator: 'o', coder: 'c', angela: 'a', oscar: 'x', pam: 'c', scribe: 's' } })), '"lanes" is missing or wrong'],
+    // scribe build: lanes.scribe is required in every profile, and it is a sixth different name; the message names it.
+    ['no-scribe-lane', variant('no-scribe-lane', (p) => ({ ...p, lanes: { orchestrator: 'o', coder: 'c', angela: 'a', oscar: 'x', pam: 'p' } })), 'six different names'],
+    ['same-scribe-lane', variant('same-scribe-lane', (p) => ({ ...p, lanes: { orchestrator: 'o', coder: 'c', angela: 'a', oscar: 'x', pam: 'p', scribe: 'p' } })), 'oscar, pam and scribe'],
+    ['extra-lane', variant('extra-lane', (p) => ({ ...p, lanes: { orchestrator: 'o', coder: 'c', angela: 'a', oscar: 'x', pam: 'p', scribe: 's', jim: 'j' } })), '"lanes" is missing or wrong'],
     ['core-string', variant('core-string', (p) => ({ ...p, coreDirs: '/src/lib/' })), '"coreDirs" is missing or wrong'],
     ['core-no-slash', variant('core-no-slash', (p) => ({ ...p, coreDirs: ['src/lib'] })), '"coreDirs" is missing or wrong'],
     // A core entry in a shape that can never match a path as the guard writes it (forward slashes; no empty, . or .. segment) would switch
@@ -2218,7 +2222,7 @@ check(
       root: 'C:/example-project',
       defaultBranch: 'main',
       ticketPrefix: 'ex',
-      lanes: { orchestrator: 'ex-orchestrator', coder: 'ex-coder', angela: 'ex-angela', oscar: 'ex-oscar', pam: 'ex-pam' },
+      lanes: { orchestrator: 'ex-orchestrator', coder: 'ex-coder', angela: 'ex-angela', oscar: 'ex-oscar', pam: 'ex-pam', scribe: 'ex-scribe' },
       knowledgeDirs: ['.agent', 'docs'],
       coreDirs: ['/src/core/'],
       coreFiles: ['/src/payments.ts'],
@@ -2344,9 +2348,9 @@ t('example orchestrator prompts ex-coder (its own lane)', 'orchestrator', 'Bash'
 pg('orchestrator reads sm-coder', 'orchestrator', 'Bash', sh(`herdr agent read sm-coder --source recent-unwrapped --lines 400 | node ${SRIGF}/bin/report.cjs --ticket SM-12`), true);
 pg('orchestrator gets sm-angela', 'orchestrator', 'PowerShell', sh('herdr agent get sm-angela'), true);
 pgr('orchestrator pane split in sample blocked: the reason names lanes.ps1 sample', 'orchestrator', 'PowerShell', sh(`herdr pane split --current --direction right --cwd '${SR}' --no-focus`), 'seat-limits', [`lanes.ps1' sample`]);
-pgr('the prompt block names the sm lanes', 'orchestrator', 'Bash', sh('herdr agent prompt ex-coder "Status?"'), 'seat-limits', ['sm-coder, sm-angela, sm-oscar or sm-pam']);
-pgr('SendMessage names the sm lanes', 'orchestrator', 'SendMessage', {}, 'outside-services', ['herdr agent prompt sm-coder, sm-angela, sm-oscar or sm-pam']);
-tr('the example prompt block still names ex-coder, ex-angela, ex-oscar or ex-pam', 'orchestrator', 'Bash', sh('herdr agent prompt sm-coder "Status?"'), 'seat-limits', ['ex-coder, ex-angela, ex-oscar or ex-pam']);
+pgr('the prompt block names the sm lanes', 'orchestrator', 'Bash', sh('herdr agent prompt ex-coder "Status?"'), 'seat-limits', ['sm-coder, sm-angela, sm-oscar, sm-pam or sm-scribe']);
+pgr('SendMessage names the sm lanes', 'orchestrator', 'SendMessage', {}, 'outside-services', ['herdr agent prompt sm-coder, sm-angela, sm-oscar, sm-pam or sm-scribe']);
+tr('the example prompt block still names ex-coder, ex-angela, ex-oscar, ex-pam or ex-scribe', 'orchestrator', 'Bash', sh('herdr agent prompt sm-coder "Status?"'), 'seat-limits', ['ex-coder, ex-angela, ex-oscar, ex-pam or ex-scribe']);
 
 // Worktree scripts: exactly one ticket name with the orchestrator's own prefix (S...: the same in HC's rig).
 const WTN = `& '${RIG}\\bin\\wt-new.ps1' `;
@@ -3336,6 +3340,212 @@ for (const [label, p, allow] of [['lib/auth.ts (listed) allowed', 'lib\\auth.ts'
   cli("other home: the same through the home's own path is blocked", blockedBy(hcCli('coder', 'sample', 'Bash', sh(`cat "${SR}\\docs\\x.md"`)), 'seat-limits', "main's"));
   cli('other home: a cat of the rig through ~ is [rule-files]', blockedBy(hcCli('checker', 'example', 'Bash', sh('cat ~/rig/hooks/guard.cjs')), 'rule-files'));
 }
+
+// ===================== the scribe build: the journal writer on tab 2 =====================
+// scribe has the checker's limits, with one fence of its own: Edit and Write only under <root>/docs/journal/, the path as given and its
+// real path, after every earlier checkEditPath block (secrets, inbox, .obsidian, .git, rule files, core and money).
+const J = V + '\\docs\\journal\\';
+const JOURNAL_ONLY = 'scribe writes only journal pages';
+for (const [label, tool, input] of [
+  ["Write of today's day page", 'Write', file(J + 'days\\2026-11-25.md')],
+  ['Edit of a week page', 'Edit', file(J + 'weeks\\2026-W48.md')],
+  ['Write of the monthly draft, a path relative to the root', 'Write', file('docs/journal/2026-11.md')],
+  ['Write in mixed case with backslashes', 'Write', file('C:\\EXAMPLE-Project\\Docs\\Journal\\2026.md')],
+  ['Write in Git Bash spelling', 'Write', file('/c/example-project/docs/journal/README.md')],
+  ['MultiEdit of a day page', 'MultiEdit', file(J + 'days\\2026-04-13.md')],
+])
+  t(`scribe: ${label} allowed`, 'scribe', tool, input, true);
+for (const [label, p, rule] of [
+  ['docs/ outside journal/', V + '\\docs\\x.md', 'seat-limits'],
+  ['a folder that only starts like journal', V + '\\docs\\journalx\\a.md', 'seat-limits'],
+  ['the journal folder itself', V + '\\docs\\journal', 'seat-limits'],
+  ['a .. path out of journal/', J + '..\\x.md', 'seat-limits'],
+  ['a mixed-case .. path out of journal/', V + '\\DOCS\\Journal\\..\\..\\src\\x.ts', 'seat-limits'],
+  ['.agent/handoffs', V + '\\.agent\\handoffs\\2026-11-25_PROMPT_next_shift.md', 'seat-limits'],
+  ['src/ in main', V + '\\src\\x.ts', 'seat-limits'],
+  ["a worktree's docs/journal/", AW + '\\docs\\journal\\days\\x.md', 'seat-limits'],
+  ["sample's docs/journal/", PG + '\\docs\\journal\\days\\x.md', 'seat-limits'],
+  ["the rig's work/briefs/", RIG + '\\example\\work\\briefs\\ex-scribe-x.md', 'seat-limits'],
+  ["the rig's rules", RIG + '\\example\\rules\\seats\\scribe.md', 'rule-files'],
+  ['docs/.gitignore', V + '\\docs\\.gitignore', 'rule-files'],
+  // Every earlier block still holds inside journal/.
+  ['a secrets file inside journal/', J + '.env.local', 'secrets'],
+  ['.git inside journal/', J + '.git\\config', 'rule-files'],
+  ['.obsidian inside journal/', J + '.obsidian\\app.json', 'rule-files'],
+  ['a Claude settings file inside journal/', J + '.claude\\settings.json', 'rule-files'],
+  ['a core file path inside journal/', J + 'src\\payments.ts', 'core-money'],
+  ['a core folder inside journal/', J + 'src\\core\\notes.md', 'core-money'],
+  ['a money file name inside journal/', J + 'billing.ts', 'core-money'],
+])
+  tr(`scribe: Write of ${label} blocked`, 'scribe', 'Write', file(p), rule);
+tr('scribe: an edit block outside journal/ names the fence', 'scribe', 'Edit', file(V + '\\docs\\x.md'), 'seat-limits', [JOURNAL_ONLY, 'c:/example-project/docs/journal/']);
+pg("sample scribe: Write of a day page in sample's docs/journal/ allowed", 'scribe', 'Write', file(PG + '\\docs\\journal\\days\\2026-11-25.md'), true);
+pg("sample scribe: Write of example's docs/journal/ blocked", 'scribe', 'Write', file(J + 'days\\2026-11-25.md'), false);
+// Links. The guard checks the path as given and its real path, so a link inside journal/ to another journal folder passes, a link inside
+// journal/ to a folder outside it blocks, and a link outside journal/ into it blocks on the given path. A guard copy in a temp rig with a
+// temp profile whose root holds the links (the guard reads <its folder>/<project>/profile.json). The root sits in its own temp folder: the
+// copy's rig is the folder above its hooks/, and a root inside the rig would be rig files.
+{
+  const tmpRig = fs.mkdtempSync(path.join(os.tmpdir(), 'rig-scribe-links-'));
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'rig-scribe-root-'));
+  try {
+    fs.mkdirSync(path.join(tmpRig, 'hooks'));
+    fs.copyFileSync(path.join(__dirname, '..', 'hooks', 'guard.cjs'), path.join(tmpRig, 'hooks', 'guard.cjs'));
+    const root = path.join(tmpRoot, 'root');
+    const jr = path.join(root, 'docs', 'journal');
+    for (const d of [path.join(jr, 'days'), path.join(root, 'src'), path.join(root, 'notes')]) fs.mkdirSync(d, { recursive: true });
+    fs.symlinkSync(path.join(jr, 'days'), path.join(jr, 'latest'), 'junction'); // inside journal/, to journal/days
+    fs.symlinkSync(path.join(root, 'src'), path.join(jr, 'out'), 'junction'); // inside journal/, to src/ outside it
+    fs.symlinkSync(jr, path.join(root, 'notes', 'j'), 'junction'); // outside journal/, into it
+    fs.mkdirSync(path.join(tmpRig, 'jt'));
+    fs.writeFileSync(path.join(tmpRig, 'jt', 'profile.json'), JSON.stringify({ ...readJson(path.join(__dirname, '..', 'example', 'profile.json')), name: 'jt', root: root.replace(/\\/g, '/') }));
+    const write = (p) =>
+      spawnSync(process.execPath, [path.join(tmpRig, 'hooks', 'guard.cjs'), '--project', 'jt', '--seat', 'scribe'], { input: JSON.stringify({ tool_name: 'Write', tool_input: { file_path: p }, cwd: root }), encoding: 'utf8' });
+    let w = write(path.join(jr, 'days', '2026-11-25.md'));
+    cli('scribe links (guard copy): a plain day page in the temp root: exit 0', w.status === 0 && w.stderr === '');
+    w = write(path.join(jr, 'latest', '2026-11-25.md'));
+    cli('scribe links (guard copy): a link inside journal/ to journal/days: exit 0', w.status === 0 && w.stderr === '');
+    w = write(path.join(jr, 'out', 'x.md'));
+    cli('scribe links (guard copy): a link inside journal/ to src/ outside it: exit 2, [seat-limits]', w.status === 2 && w.stderr.includes('[seat-limits]') && w.stderr.includes(JOURNAL_ONLY));
+    w = write(path.join(root, 'notes', 'j', 'days', 'x.md'));
+    cli('scribe links (guard copy): a link outside journal/ into it: exit 2 on the given path', w.status === 2 && w.stderr.includes('[seat-limits]'));
+  } finally {
+    fs.rmSync(tmpRig, { recursive: true, force: true });
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+}
+// scribe has NO shell. The shared banned-command list has holes (git aliases and hooks, timeout, --output, hard links, awk system(), sed's
+// e, archive tools, pager variables, ...) that let a seat that can write a file run it or write outside docs/journal/, so every call that
+// carries a command, and Bash, PowerShell and Monitor by name, is refused for scribe (its flags also disallow them).
+const NO_SHELL = 'scribe has no shell';
+for (const c of [
+  "git -c alias.z='!docs/journal/x.md' z",
+  'git -c core.fsmonitor=docs/journal/x.sh status',
+  'timeout 5 docs/journal/x.sh',
+  'git --exec-path=docs/journal log',
+  'git diff HEAD~1 --output=src/payments.ts',
+  'fsutil hardlink create docs\\journal\\h src\\payments.ts',
+  "awk 'BEGIN{system(\"docs/journal/x.sh\")}'",
+  "sed -n '1e docs/journal/x.sh' README.md",
+  'certutil -decode docs\\journal\\x.md src\\x.ts',
+  'tar -xf docs/journal/x.tar -C src',
+  'Expand-Archive docs\\journal\\x.zip src',
+  'Clear-Item src\\payments.ts',
+  '$env:GIT_PAGER = "docs/journal/x.sh"',
+  'git clone C:/x C:/y',
+  'git init docs/journal/r',
+  'git notes add -m x',
+  'git branch x',
+  'git update-index --assume-unchanged src/x.ts',
+  'git log --oneline --since 2026-11-24 --until 2026-11-25',
+  'git log --since 2026-11-24 --until 2026-11-26 --format="%h %as %s"',
+  "Get-Date -Format 'yyyy-MM-dd'",
+  'ls docs/journal/days',
+  'node docs/journal/x.cjs',
+  'npm run build',
+  'Set-Content docs/journal/x.md y',
+])
+  for (const tool of ['Bash', 'PowerShell', 'Monitor']) tr(`scribe: ${tool} ${c.slice(0, 60)} blocked (no shell)`, 'scribe', tool, sh(c), 'seat-limits', [NO_SHELL, 'Read, Grep and Glob']);
+for (const [label, tool, input] of [
+  ['Bash with no command', 'Bash', {}],
+  ['PowerShell with no command', 'PowerShell', {}],
+  ['Monitor on a websocket', 'Monitor', { ws: { url: 'ws://localhost:1/x' }, description: 'x' }],
+  ['a background command', 'Bash', { command: 'git log --oneline', run_in_background: true }],
+  ['any other tool that carries a command', 'SomeNewTool', { command: 'git log' }],
+])
+  tr(`scribe: ${label} blocked`, 'scribe', tool, input, 'seat-limits');
+for (const [label, tool, input, rule] of [
+  ['WebFetch', 'WebFetch', { url: 'https://example.com' }, 'outside-services'],
+  ['WebSearch', 'WebSearch', { query: 'x' }, 'outside-services'],
+  ['AskUserQuestion', 'AskUserQuestion', {}, 'seat-limits'],
+  ['Agent', 'Agent', {}, 'seat-limits'],
+  ['SendMessage', 'SendMessage', {}, 'outside-services'],
+])
+  tr(`scribe: ${label} blocked`, 'scribe', tool, input, rule);
+t('scribe greps the handoffs with the Grep tool', 'scribe', 'Grep', { pattern: 'EX-6', path: V + '\\.agent\\handoffs' }, true);
+t('scribe lists the day pages with the Glob tool', 'scribe', 'Glob', { pattern: 'docs/journal/days/*.md', path: V }, true);
+// Inside docs/journal/ only Markdown pages: a name ending in .md, no segment starting with a dot anywhere under journal/, and no CLAUDE.md
+// (any case), which Claude Code would load as rules.
+for (const [label, rel] of [
+  ['.gitignore', '.gitignore'],
+  ['.gitattributes', '.gitattributes'],
+  ['a skill under .claude/', '.claude\\skills\\x\\SKILL.md'],
+  ['a dot folder deeper down', 'days\\.hidden\\x.md'],
+  ['a dot file that ends in .md', 'days\\.x.md'],
+  ['x.cmd', 'x.cmd'],
+  ['x.sh', 'days\\x.sh'],
+  ['a page with no extension', 'days\\2026-11-25'],
+  ['CLAUDE.md', 'CLAUDE.md'],
+  ['claude.MD deeper down', 'weeks\\claude.MD'],
+])
+  tr(`scribe: Write of ${label} inside journal/ blocked`, 'scribe', 'Write', file(J + rel), 'seat-limits', ['Markdown']);
+t('scribe: Write of a .MD page (upper case) inside journal/ allowed', 'scribe', 'Write', file(J + 'days\\2026-11-25.MD'), true);
+// A journal name is plain: folders of letters, digits, _ and -, a page of those and dots ending in .md, nothing else (no space, ~, trailing
+// dot, non-ASCII, : stream), and never a file Claude Code loads as rules from a nested folder.
+for (const [label, rel] of [
+  ['CLAUDE.local.md', 'CLAUDE.local.md'],
+  ['claude.LOCAL.md deeper down', 'days\\claude.LOCAL.md'],
+  ['AGENTS.md', 'AGENTS.md'],
+  ['agents.MD deeper down', 'weeks\\agents.MD'],
+  ['a stream onto CLAUDE.md', 'CLAUDE.md:x.md'],
+  ['a stream onto x.cmd', 'x.cmd:y.md'],
+  ['a name with a space', 'days\\a b.md'],
+  ['an 8.3 short name', 'CLAUDE~1.md'],
+  ['a trailing dot', 'days\\x.md.'],
+  ['a non-ASCII name', 'days\\caf\u00e9.md'],
+  ['a folder with a dot in its name', 'v1.2\\notes.md'],
+  ['a folder with a space', 'my days\\x.md'],
+])
+  tr(`scribe: Write of ${label} inside journal/ blocked`, 'scribe', 'Write', file(J + rel), 'seat-limits', ['Markdown']);
+for (const rel of ['days\\2026-04-13.md', 'weeks\\2026-W16.md', 'README.md', '2026-04.md', 'me.md', '2026.md', 'days\\2026-04-13.v2.md'])
+  t(`scribe: Write of ${rel} inside journal/ allowed`, 'scribe', 'Write', file(J + rel), true);
+// scribe's tools are an allow-list, fail closed: Read, Grep, Glob, Write, Edit, MultiEdit, its task list and ToolSearch. The shell keeps
+// its own message; every other tool (worktrees, cron, skills, LSP, MCP, any new one) is refused.
+for (const [tool, input] of [
+  ['EnterWorktree', { name: 'x' }],
+  ['ExitWorktree', { action: 'remove' }],
+  ['CronCreate', { cron: '* * * * *', prompt: 'x' }],
+  ['TaskStop', { task_id: 'x' }],
+  ['Skill', { skill: 'x' }],
+  ['LSP', {}],
+  ['mcp__gitnexus__group_sync', {}],
+  ['mcp__gitnexus__query', { query: 'x' }],
+  ['NotebookEdit', { notebook_path: J + 'x.md' }],
+  ['SomeNewTool', {}],
+])
+  tr(`scribe: ${tool} blocked (not on its tool list)`, 'scribe', tool, input, 'seat-limits', ['scribe uses only Read, Grep, Glob, Write, Edit and its task list']);
+for (const tool of ['TodoWrite', 'ToolSearch', 'TaskCreate', 'TaskGet', 'TaskList', 'TaskUpdate']) t(`scribe: ${tool} allowed (on its tool list)`, 'scribe', tool, {}, true);
+tr('scribe: an allowed tool that carries a command is still refused (no shell)', 'scribe', 'TodoWrite', { command: 'git log' }, 'seat-limits', [NO_SHELL]);
+tr('scribe: Bash keeps the no-shell message', 'scribe', 'Bash', sh('git log'), 'seat-limits', [NO_SHELL]);
+// The allow-listed tools still reach their own checks.
+tr('scribe: MultiEdit outside the journal still blocked by the fence', 'scribe', 'MultiEdit', file(V + '\\src\\x.ts'), 'seat-limits', [JOURNAL_ONLY]);
+tr('scribe: Read of .env.local still a secrets block', 'scribe', 'Read', file(V + '\\.env.local'), 'secrets');
+tr('scribe: Grep with a .env glob still a secrets block', 'scribe', 'Grep', { pattern: 'x', glob: '.env*' }, 'secrets');
+t('scribe reads its brief with the Read tool', 'scribe', 'Read', file(RIG + '\\example\\work\\briefs\\ex-scribe-20261125.md'), true);
+t('scribe reads a handoff with the Read tool', 'scribe', 'Read', file(V + '\\.agent\\handoffs\\2026-11-25_PROMPT_next_shift.md'), true);
+// The orchestrator prompts its own project's scribe lane, never another project's; lanes.ps1 starts it (its own start is refused).
+t('orchestrator prompts ex-scribe with a brief', 'orchestrator', 'PowerShell', sh(`herdr agent prompt ex-scribe "Read ${RIG}\\example\\work\\briefs\\ex-scribe-20261125.md and do it." --wait --timeout 3600000`), true);
+t('orchestrator gets ex-scribe', 'orchestrator', 'PowerShell', sh('herdr agent get ex-scribe'), true);
+// The orchestrator runs the commit lines for scribe's brief itself (scribe has no shell), as its close step writes them.
+for (const tool of ['Bash', 'PowerShell']) t(`orchestrator runs the git log line for ex-scribe's brief (${tool})`, 'orchestrator', tool, sh('git log --since 2026-11-24 --until 2026-11-26 --format="%h %as %s"'), true);
+// The close step's report read, without --ticket (scribe's report starts with Brief:), as the orchestrator role writes it.
+for (const tool of ['Bash', 'PowerShell']) t(`orchestrator reads ex-scribe's report with report.cjs, no --ticket (${tool})`, 'orchestrator', tool, sh(`herdr agent read ex-scribe --source recent-unwrapped --lines 400 | node ${RIGF}/bin/report.cjs`), true);
+check(
+  "the example role's close step holds that report read, word for word",
+  ROLE_LINES.some((l) => l.includes(`\`herdr agent read ex-scribe --source recent-unwrapped --lines 400 | node ${RIGF}/bin/report.cjs\``))
+);
+t('example orchestrator prompts sm-scribe blocked', 'orchestrator', 'Bash', sh('herdr agent prompt sm-scribe "Status?"'), false);
+pg('sample orchestrator prompts sm-scribe', 'orchestrator', 'PowerShell', sh('herdr agent prompt sm-scribe "Status?"'), true);
+pg("sample orchestrator prompts example's ex-scribe blocked", 'orchestrator', 'PowerShell', sh('herdr agent prompt ex-scribe "Status?"'), false);
+tr('the example prompt block names ex-scribe among its lanes', 'orchestrator', 'Bash', sh('herdr agent prompt sm-scribe "Status?"'), 'seat-limits', ['ex-coder, ex-angela, ex-oscar, ex-pam or ex-scribe']);
+t('orchestrator start of ex-scribe blocked (lanes.ps1 starts it)', 'orchestrator', 'PowerShell', sh(roleStart('scribe', 'w1:p6')), false);
+for (const seat of ['coder', 'checker', 'pam']) tr(`${seat} prompts ex-scribe blocked`, seat, 'Bash', sh('herdr agent prompt ex-scribe "Status?"'), 'seat-limits');
+// The CLI takes --seat scribe.
+r = spawnSync(process.execPath, [path.join(__dirname, '..', 'hooks', 'guard.cjs'), '--project', 'example', '--seat', 'scribe'], { input: JSON.stringify({ tool_name: 'Write', tool_input: { file_path: J + 'days\\2026-11-25.md' }, cwd: V }), encoding: 'utf8' });
+cli('CLI --seat scribe allows a Write of a day page: exit 0', r.status === 0 && r.stderr === '');
+r = spawnSync(process.execPath, [path.join(__dirname, '..', 'hooks', 'guard.cjs'), '--project', 'example', '--seat', 'scribe'], { input: JSON.stringify({ tool_name: 'Write', tool_input: { file_path: V + '\\docs\\x.md' }, cwd: V }), encoding: 'utf8' });
+cli('CLI --seat scribe blocks a Write in docs/ outside journal/: exit 2', r.status === 2 && r.stderr.includes('BLOCKED by rig guard [seat-limits]'));
+check("scribe: loadProfile lists scribe among each project's lanes", loadProfile('example').lanes.includes('ex-scribe') && SG.loadProfile('sample').lanes.includes('sm-scribe'));
 
 if (failed) {
   console.error(`guard: ${failed} of ${total} checks failed`);

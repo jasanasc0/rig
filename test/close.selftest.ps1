@@ -109,6 +109,19 @@ try {
   $r = Invoke-Close (Base) @('example') -DotSource
   Check ($r.Out -match 'leaked: False') "dot-sourced, a whole close: no Invoke-Herdr left in the caller ($((($r.Out -split "`n") | Select-Object -Last 1)))"
 
+  # The scribe build: scribe in the seats tab under pam ends like the other lanes, after pam, and the seats tab closes after both.
+  $s = Base
+  $s.panes = @($s.panes) + @((Pane 'w1:p6' 'w1:t2' 'ex-scribe'))
+  $r = Invoke-Close $s @('example')
+  $want = @($exAll | Where-Object { $_ -ne 'tab close w1:t2' -and $_ -ne 'pane close w1:p1' }) + @('agent prompt ex-scribe /exit', 'pane close w1:p6', 'tab close w1:t2', 'pane close w1:p1')
+  Check ($r.Code -eq 0 -and ($r.Changes -join ' | ') -eq ($want -join ' | ')) "pam and scribe in the seats tab: both end, then the seats tab, then its own pane ($($r.Changes -join ' | '))"
+  Check (-not @($r.State.tabs | Where-Object { $_.tab_id -eq 'w1:t2' }) -and -not (P $r.State 'w1:p6')) "pam and scribe in the seats tab: scribe's pane and the seats tab are gone"
+  Check-Common $r 'pam and scribe' 'w2'
+  # A working scribe stops the close like any lane.
+  (P $s 'w1:p6').agent_status = 'working'
+  $r = Invoke-Close $s @('example')
+  Check ($r.Code -ne 0 -and $r.Changes.Count -eq 0 -and $r.Out -match 'ex-scribe' -and $r.Out -match 'nothing was closed') "scribe working, no -Force: refused, names scribe ($($r.Code))"
+
   # D: a working lane stops the whole close before anything closes; -Force closes it too.
   $s = Base
   (P $s 'w1:p4').agent_status = 'working'

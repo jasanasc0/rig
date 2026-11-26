@@ -34,14 +34,14 @@ const exampleFiles = () =>
     .map((f) => ({ path: path.relative(path.join(__dirname, '..'), f).replace(/\\/g, '/'), text: fs.readFileSync(f, 'utf8') }));
 
 // 1. The shared section: from its heading to the next ## heading (or the end of the file).
-const SEATS = ['coder', 'angela', 'oscar', 'pam'];
+const SEATS = ['coder', 'angela', 'oscar', 'pam', 'scribe'];
 const shared = SEATS.map((seat) => {
   const text = read(path.join(RULES, 'seats', seat + '.md'));
   const m = text && text.match(/^## The project's CLAUDE\.md\n[\s\S]*?(?=^## |(?![\s\S]))/m);
   return m ? m[0] : null;
 });
 check(
-  `the "The project's CLAUDE.md" section is byte-identical in the four seat files`,
+  `the "The project's CLAUDE.md" section is byte-identical in the five seat files`,
   shared.every((s) => s !== null && s.length > 100 && s === shared[0]),
   SEATS.map((seat, i) => `${seat}: ${shared[i] === null ? 'missing' : shared[i] === shared[0] ? 'same as coder' : 'differs from coder'}`).join(', ')
 );
@@ -62,7 +62,7 @@ check(
 );
 
 // 3. The guard hook of each settings file, with {{RIG}} replaced as new-project.ps1 does.
-const GUARD_SEAT = { orchestrator: 'orchestrator', coder: 'coder', angela: 'checker', oscar: 'checker', pam: 'pam' };
+const GUARD_SEAT = { orchestrator: 'orchestrator', coder: 'coder', angela: 'checker', oscar: 'checker', pam: 'pam', scribe: 'scribe' };
 const hookProblems = Object.entries(GUARD_SEAT).flatMap(([seat, guardSeat]) => {
   const text = read(path.join(RULES, seat + '.settings.json'));
   if (text === null) return [`${seat}.settings.json is missing`];
@@ -138,6 +138,8 @@ else {
       "You run the gate's commands in the checkout the brief names (the ticket's worktree, or main when the brief says so) and read what the brief points to, wherever it is. You change no file yourself; the only files your commands write are their own output (the test JSON in your temp folder, the build's output). Out of bounds, even when a tool or the guard lets it through: any other file write, commit or other git change; `.env*` files; `.claude/` settings; and anything that leaves this PC (a push, a deploy, an upload, a message to another session).",
     pam:
       "You run `pms.cjs` with the commands your brief lists and read what the brief points to. You change no file yourself (`pms.cjs` writes its own log). Out of bounds, even when a tool or the guard lets it through: any other script, board or file write; `.env*` files; `.claude/` settings; and anything else that leaves this PC (an upload, a message to another session).",
+    scribe:
+      "You read what the brief points to (handoffs, task files, docs) with the Read, Grep and Glob tools; you have no shell, so the brief writes out the commits. You write only the Markdown journal pages the brief names, under `docs/journal/` of example's main checkout. Out of bounds, even when a tool or the guard lets it through: any other file (a handoff, a task, a doc, code, a worktree), any shell command, running a script, `.env*` files, `.claude/` settings, personal data, and anything that leaves this PC (an upload, a message to another session).",
   };
   const GUARD = 'Guard: none, or each block (its rule and what you tried) and each gap you found (what and where)';
   for (const seat of SEATS) {

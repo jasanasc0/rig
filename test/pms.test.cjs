@@ -439,6 +439,8 @@ const other = http.createServer((req, res) => {
     await privacy([...V, 'create', 'A clean title', draft('p-desc.md', 'What: see the ex-coder notes.')], 'ex-coder', 'a create description with a lane name');
     await privacy([...V, 'edit', 'EX-12', '--title', 'herdr follow-up'], 'herdr', 'an edit title');
     await privacy([...V, 'edit', 'EX-12', '--description', draft('p-edit.md', 'Owner: ex-oscar.')], 'ex-oscar', 'an edit description');
+    // scribe build: the new lane names come from the profiles too, so ex-scribe never reaches the PMS.
+    await privacy([...V, 'comment', 'EX-12', draft('p-scribe.md', 'The ex-scribe wrote the day page.')], 'ex-scribe', 'a comment with the scribe lane name (a lane since the scribe build)');
     r = await run([...V, 'comment', 'EX-12', draft('p-clean.md', 'The trigger is rigorous; the flex-coders read the ex-pamphlet.')]);
     check('privacy: words that only contain a name (trigger, rigorous, flex-coders, ex-pamphlet) pass', r.status === 0 && r.stdout.includes('DRY RUN'));
     fs.mkdirSync(path.join(tmp, 'zz-broken'));

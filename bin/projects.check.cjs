@@ -43,7 +43,7 @@ const report = (label, problems) => {
 // 1. Each checked project: its profile, then its settings files' guard hooks (the seat the guard takes for each settings file), then
 // every hook that runs a rig script. A settings file still naming an old rig folder, another project or a script that is gone would
 // run that copy, or nothing, unnoticed: each such hook is its own FAIL line.
-const GUARD_SEAT = { orchestrator: 'orchestrator', coder: 'coder', angela: 'checker', oscar: 'checker', pam: 'pam' };
+const GUARD_SEAT = { orchestrator: 'orchestrator', coder: 'coder', angela: 'checker', oscar: 'checker', pam: 'pam', scribe: 'scribe' };
 const HOOK_SCRIPTS = ['guard.cjs', 'refocus.cjs', 'context-check.cjs']; // the rig scripts a settings file's hooks run, all in <rig>/hooks/
 const loaded = [];
 for (const name of checked) {
